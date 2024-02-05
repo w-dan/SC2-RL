@@ -1,6 +1,6 @@
 # SC2-RL
 
-!["SC"](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMXdlcDJpcWFkMXo4ZDVmYmN4Nm1mYmJuanAxMDNyeTkxeGF2ejdiMCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/4ZkAeUWFF9ZGRXE7Ud/giphy.gif)
+!["SC"](https://i.imgur.com/9gTl9Wa.gif)
 
 RL agent that plays SC2.
 
