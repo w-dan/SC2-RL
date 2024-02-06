@@ -1,6 +1,6 @@
 # SC2-RL
 
-!["SC"](https://i.imgur.com/9gTl9Wa.gif)
+![SC](https://i.imgur.com/9gTl9Wa.gif)
 
 RL agent that plays SC2.
 
