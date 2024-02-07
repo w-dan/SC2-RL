@@ -1,8 +1,19 @@
 # SC2-RL
 
-![SC](https://i.imgur.com/9gTl9Wa.gif)
+<p align="center">
+  <a href="" rel="noopener">
+ <img src="https://i.imgur.com/9gTl9Wa.gif" alt="Project logo" style="border-radius:10px"></a>
+</p>
+
+
 
 RL agent that plays SC2.
+
+
+![Static Badge](https://img.shields.io/badge/%5B%3E_%5D-Our%20website-green?style=for-the-badge&labelColor=green&link=https%3A%2F%2Fcoredumped.es)
+[![Status](https://img.shields.io/badge/status-active-green?)]()
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+
 
 ## Prerequisites
 - [Starcraft II](https://starcraft2.blizzard.com/en-us/) installed in your system
