@@ -1,28 +1,25 @@
-# SC2-RL
-
-<p align="center">
-  <a href="" rel="noopener">
- <img src="https://i.imgur.com/9gTl9Wa.gif" alt="Project logo" style="border-radius:10px"></a>
-</p>
-
-
-
-RL agent that plays SC2.
-
-
 ![Static Badge](https://img.shields.io/badge/%5B%3E_%5D-Our%20website-green?style=for-the-badge&labelColor=green&link=https%3A%2F%2Fcoredumped.es)
-[![Status](https://img.shields.io/badge/status-active-green?)]()
+![Status](https://img.shields.io/badge/status-active-green?)
 ![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
 
+# SC2-RL
 
-## Prerequisites
-- [Starcraft II](https://starcraft2.blizzard.com/en-us/) installed in your system
-- [Python](https://www.python.org/downloads/) >= 3.7
-- [python-sc2](https://github.com/BurnySc2/python-sc2) library
-- Creating a `Maps` folder under your `Starcraft II` installation folder. You will have to add maps (.SC2MAP files) here, they are available for download in sites such as [sc2mapster](https://www.sc2mapster.com/maps).
+![starcraftII (giphy)](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExMmhmbHV1ejF6eWoxcTQyZXJpYTVtODg5OHp0NXg1NmhqdDFmb3UyMCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/4ZkAeUWFF9ZGRXE7Ud/giphy.gif)
+
+Creation of a **Reinforcement Learning** agent that plays **Starcraft II**. This project emerges from the interest on reinforcement learning and the complexity of a stratigic game like starcraft.
+
+## Setup steps
+
+1. [Starcraft II](https://starcraft2.blizzard.com/en-us/) installed in your system
+2. [Python](https://www.python.org/downloads/) >= 3.7
+3. Install dependecy [python-sc2](https://github.com/BurnySc2/python-sc2)
+4. Create a folder named `Maps` under your `Starcraft II` installation folder.
+5. Add maps (.SC2MAP files) under previous folder, they are available for download in sites such as [sc2mapster](https://www.sc2mapster.com/maps).
+    1. For this use case, [scorpion](https://www.sc2mapster.com/projects/desert-map-melee-1v1) map is used.
 
 ## Authors
+
 - [w-dan](https://github.com/w-dan/)
 - [blitty-codes](https://github.com/blitty-codes/)
 
-Setup created following a [setup tutorial](https://pythonprogramming.net/intro-python-sc2-introduction-starcraft-2-ai/) by [sendtex](https://www.youtube.com/@sentdex)  
+Setup created following [setup tutorial](https://pythonprogramming.net/intro-python-sc2-introduction-starcraft-2-ai/) by [sendtex](https://www.youtube.com/@sentdex)  
