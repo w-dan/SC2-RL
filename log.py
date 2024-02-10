@@ -16,7 +16,7 @@ class CustomLogger:
             self._add_screen_handler(formatter)
         elif output == LoggerOption.FILE:
             if log_file:
-                self._add_file_handler(formatter, log_file)
+                self._add_file_handler(formatter, f"logs/{log_file}.log")
             else:
                 raise ValueError("Log file path is required when output is 'file'.")
         else:

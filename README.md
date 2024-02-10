@@ -13,8 +13,9 @@ Creation of a **Reinforcement Learning** agent that plays **Starcraft II**. This
 1. [Starcraft II](https://starcraft2.blizzard.com/en-us/) installed in your system
 2. [Python](https://www.python.org/downloads/) >= 3.7
 3. Install dependecy [python-sc2](https://github.com/BurnySc2/python-sc2)
-4. Create a folder named `Maps` under your `Starcraft II` installation folder.
-5. Add maps (.SC2MAP files) under previous folder, they are available for download in sites such as [sc2mapster](https://www.sc2mapster.com/maps).
+4. Create a folder named `logs` on parent folder
+5. Create a folder named `Maps` under your `Starcraft II` installation folder.
+6. Add maps (.SC2MAP files) under previous folder, they are available for download in sites such as [sc2mapster](https://www.sc2mapster.com/maps).
     1. For this use case, [scorpion](https://www.sc2mapster.com/projects/desert-map-melee-1v1) map is used.
 
 ## Authors
