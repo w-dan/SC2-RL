@@ -6,14 +6,12 @@ from log import CustomLogger, LoggerOption
 # Bot from third video of sentdex
 # https://www.youtube.com/watch?v=FyhxoHKFIiY&list=PLQVvvaa0QuDcBby2qVDsDv41GghEQfr5E&index=3
 class IncrediBot(BotAI): # inhereits from BotAI (part of BurnySC2)
+    
+    def __init__(self):
+        super().__init__()
+    
     async def on_step(self, iteration: int): # on_step is a method that is called every step of the game.
-        # print(f"{iteration}, n_workers: {self.workers.amount}, n_idle_workers: {self.workers.idle.amount},", \
-        #    f"minerals: {self.minerals}, gas: {self.vespene}, cannons: {self.structures(UnitTypeId.PHOTONCANNON).amount},", \
-        #    f"pylons: {self.structures(UnitTypeId.PYLON).amount}, nexus: {self.structures(UnitTypeId.NEXUS).amount}", \
-        #    f"gateways: {self.structures(UnitTypeId.GATEWAY).amount}, cybernetics cores: {self.structures(UnitTypeId.CYBERNETICSCORE).amount}", \
-        #    f"stargates: {self.structures(UnitTypeId.STARGATE).amount}, voidrays: {self.units(UnitTypeId.VOIDRAY).amount}, supply: {self.supply_used}/{self.supply_cap}")
-        
-        logger = CustomLogger(LoggerOption.FILE, 'IncreditBot')
+        logger = CustomLogger(LoggerOption.FILE, 'IncrediBot')
         logger.info(f"[{iteration}], n_workers: {self.workers.amount}, n_idle_workers: {self.workers.idle.amount}, " \
                     f"minerals: {self.minerals}, gas: {self.vespene}, cannons: {self.structures(UnitTypeId.PHOTONCANNON).amount}, " \
                     f"pylons: {self.structures(UnitTypeId.PYLON).amount}, nexus: {self.structures(UnitTypeId.NEXUS).amount}, " \

@@ -3,8 +3,8 @@ import tensorflow as tf
 import numpy as np
 
 # custom
-from sc2env import Sc2Env
-from artanis_bot import ArtanisBot          # TODO: import properly (can't resolve path)
+from rl.sc2env import Sc2Env
+from bots.artanis_bot import ArtanisBot          # TODO: import properly (can't resolve path)
 
 # policies
 from tf_agents.policies import random_tf_policy     # testing random as baseline
@@ -12,21 +12,21 @@ from tf_agents.specs import array_spec
 from tf_agents.policies import py_policy
 from tf_agents.policies import random_py_policy
 from tf_agents.policies import scripted_py_policy
+from gym.spaces import Discrete
 
 # layers
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Conv2D, Flatten
 
 
-environment = Sc2Env()
-action_spec = array_spec.BoundedArraySpec(np.int32, 0, 1)           # 32bit integers ∈ [0, 2]
-my_random_py_policy = random_py_policy.RandomPyPolicy(time_step_spec=None, action_spec=action_spec)
+# environment = Sc2Env()
+action_space = Discrete(2)  
+
 
 class RandomPolicy():
-    
-    def __init__(self, environment, policy):
+    def __init__(self, environment):
         self.environment = environment
-        self.policy = policy
+        # self.policy = policy
 
     def run(self, n_iters):
         time_step = self.environment.reset()  # first time step
@@ -42,6 +42,7 @@ class RandomPolicy():
 
 class DoubleDeepQPolicy():
 
+    """      TODO: find out how to load models
     @staticmethod
     def create_network(input_shape, conv_blocks, dense_blocks, output_neurons):
         model = Sequential()
@@ -60,6 +61,7 @@ class DoubleDeepQPolicy():
         model.add(Dense(units=output_neurons, activation='softmax'))
 
         return model
+    """
 
     @staticmethod
     def get_inference_result(model, input_data):

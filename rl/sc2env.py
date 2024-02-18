@@ -2,6 +2,7 @@ import cv2
 import time
 import gymnasium
 import gymnasium as spaces
+from gym.spaces import Discrete
 
 from sc2.data import Difficulty, Race  # difficulty for bots, race for the 1 of 3 races
 from sc2.main import run_game  # function that facilitates actually running the agents in games
@@ -28,7 +29,7 @@ class Sc2Env(gymnasium.Env):
         '''
         super(Sc2Env, self).__init__()
         # https://gymnasium.farama.org/api/spaces/#spaces
-        self.action_space = spaces.Discrete(3)
+        self.action_space = Discrete(3)
         # I think this is what you can render later
         # self.observation_space = spaces.Box(low=0, high=255, shape=(224, 224,3), dtype=np.uint8)
         self.bot = bot
@@ -56,7 +57,7 @@ class Sc2Env(gymnasium.Env):
 
         if self.verbose >= 1:
             if iteration % 100 == 0:
-                print(f"Iter: {iteration}. RWD: {reward}. VoidRaid: {info["n_VOIDRAY"]}")
+                print(f"Iter: {iteration}. RWD: {reward}. Void Ray: {info['n_VOIDRAY']}")
 
         done = False if self.result.value == None else True
 
