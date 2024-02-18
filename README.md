@@ -22,5 +22,6 @@ Creation of a **Reinforcement Learning** agent that plays **Starcraft II**. This
 
 - [w-dan](https://github.com/w-dan/)
 - [blitty-codes](https://github.com/blitty-codes/)
+- [Alvaro Tena](https://github.com/AlvaroTena)
 
 Setup created following [setup tutorial](https://pythonprogramming.net/intro-python-sc2-introduction-starcraft-2-ai/) by [sendtex](https://www.youtube.com/@sentdex)  
