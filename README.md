@@ -10,6 +10,8 @@ Creation of a **Reinforcement Learning** agent that plays **Starcraft II**. This
 
 ## Setup steps
 
+If you are using windows, you need to install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/), once it is installed, select `Desktop development with C++`. After installed, `gymnasium[box2d]` will work.
+
 1. [Starcraft II](https://starcraft2.blizzard.com/en-us/) installed in your system
 2. [Python](https://www.python.org/downloads/) >= 3.7
 3. Install dependecy [python-sc2](https://github.com/BurnySc2/python-sc2)
