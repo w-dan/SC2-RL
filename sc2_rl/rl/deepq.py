@@ -3,8 +3,8 @@ import tensorflow as tf
 import numpy as np
 
 # custom
-from rl.sc2env import Sc2Env
-from bots.artanis_bot import ArtanisBot          # TODO: import properly (can't resolve path)
+# from sc2env import Sc2Env
+from sc2_rl.bots.artanis_bot import ArtanisBot          # TODO: import properly (can't resolve path)
 
 # policies
 from tf_agents.policies import random_tf_policy     # testing random as baseline
@@ -12,11 +12,11 @@ from tf_agents.specs import array_spec
 from tf_agents.policies import py_policy
 from tf_agents.policies import random_py_policy
 from tf_agents.policies import scripted_py_policy
-from gym.spaces import Discrete
+from gymnasium.spaces import Discrete
 
-# layers
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Conv2D, Flatten
+# # layers
+# from tensorflow.keras.models import Sequential
+# from tensorflow.keras.layers import Dense, Conv2D, Flatten
 
 
 # environment = Sc2Env()

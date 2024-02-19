@@ -1,8 +1,8 @@
 from tf_agents.environments.suite_gym import wrap_env
 
-from bots.artanis_bot import ArtanisBot
-from rl.deepq import RandomPolicy, action_space #, my_random_py_policy
-from rl.sc2env import Sc2Env
+from sc2_rl.bots.artanis_bot import ArtanisBot
+from sc2_rl.rl.deepq import RandomPolicy, action_space #, my_random_py_policy
+from sc2_rl.rl.sc2env import Sc2Env
 
 MAP_NAME = "Scorpion_1.01"
 

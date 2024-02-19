@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "sc2-rl"
+version = "0.1.0"
+description = ""
+authors = ["blitty-codes", "AlvaroTena", "w-dan"]
+readme = "README.md"
+packages = [{include = "sc2_rl"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+tensorflow-io-gcs-filesystem = "0.31"
+tf-agents = "^0.19.0"
+opencv-python = "^4.9.0.80"
+gymnasium = {extras = ["box2d"], version = "^0.29.1"}
+burnysc2 = "^6.5.0"
+tensorflow = "2.15.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

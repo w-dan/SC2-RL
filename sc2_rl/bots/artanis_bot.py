@@ -1,10 +1,11 @@
+import sys
 import asyncio
 
 import numpy as np
 from sc2.bot_ai import BotAI  # parent class we inherit from
 from sc2.ids.unit_typeid import UnitTypeId
 
-from ..types.constants import MAX_WORKERS, RANGES
+from sc2_rl.types.constants import MAX_WORKERS, RANGES
 
 
 # Ref: https://github.com/Sentdex/SC2RL

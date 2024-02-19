@@ -1,8 +1,11 @@
+from enum import Enum
 import cv2
 import time
 import gymnasium
+import numpy as np
+
 import gymnasium as spaces
-from gym.spaces import Discrete
+from gymnasium.spaces import Discrete, Box
 
 from sc2.data import Difficulty, Race  # difficulty for bots, race for the 1 of 3 races
 from sc2.main import run_game  # function that facilitates actually running the agents in games
@@ -11,6 +14,11 @@ from sc2 import maps  # maps method for loading maps to play in.
 
 from multiprocessing import Process, Value
 
+
+class GameResult(Enum):
+    PLAYING = 0
+    WIN = 1
+    LOSE = 2
 
 # https://gymnasium.farama.org/api/env/
 class Sc2Env(gymnasium.Env):
@@ -31,9 +39,9 @@ class Sc2Env(gymnasium.Env):
         # https://gymnasium.farama.org/api/spaces/#spaces
         self.action_space = Discrete(3)
         # I think this is what you can render later
-        # self.observation_space = spaces.Box(low=0, high=255, shape=(224, 224,3), dtype=np.uint8)
+        self.observation_space = Box(low=0, high=255, shape=(224, 224,3), dtype=np.uint8)
         self.bot = bot
-        self.result = Value('is_game_finished', None)
+        self.result = Value('d', GameResult.PLAYING.value)
         self.game = Process(target=self._run_game)
         self.verbose = verbose
         self.map_name = map_name
@@ -42,24 +50,25 @@ class Sc2Env(gymnasium.Env):
         state_rwd = self.bot.step(action)
 
         observation = state_rwd["state"]["map"]
+        self.observation_space = observation
         reward = state_rwd["micro-reward"]
         reward += self._calculate_macro_reward(state_rwd["info"])
         info = state_rwd["info"]
         iteration = info["iteration"]
 
         if self.verbose >= 2:
-            cv2.imshow('map',cv2.flip(cv2.resize(map, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST), 0))
+            cv2.imshow('map',cv2.flip(cv2.resize(observation, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST), 0))
             cv2.waitKey(1)
 
         if self.verbose >= 3:
             # save map image into "replays dir"
-            cv2.imwrite(f"replays/{int(time.time())}-{iteration}.png", map)
+            cv2.imwrite(f"replays/{int(time.time())}-{iteration}.png", observation)
 
         if self.verbose >= 1:
             if iteration % 100 == 0:
                 print(f"Iter: {iteration}. RWD: {reward}. Void Ray: {info['n_VOIDRAY']}")
 
-        done = False if self.result.value == None else True
+        done = False if self.result.value == GameResult.PLAYING.value else True
 
         return observation, reward, done, info
 
@@ -94,10 +103,9 @@ class Sc2Env(gymnasium.Env):
     def _calculate_macro_reward(self, info) -> float:
         reward = 0
         
-        if self.result.value != None:
-            if str(self.result.value) == "Result.Victory":
-                reward += 500
-            else:
-                reward += -500
+        if self.result.value == GameResult.WIN.value:
+            reward += 500
+        elif self.result.value == GameResult.LOSE.value:
+            reward += -500
         
         return reward
