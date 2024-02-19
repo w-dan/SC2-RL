@@ -191,6 +191,10 @@ class ArtanisBot(BotAI):
         }
 
     def get_state_from_world(self):
+        print("== WORLD STATE ==")
+        print(self.game_info.map_size)
+        print("== WORLD STATE ==")
+
         state_map = np.zeros(
             (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
         )

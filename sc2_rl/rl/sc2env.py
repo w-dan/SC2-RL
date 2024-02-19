@@ -76,17 +76,18 @@ class Sc2Env(gymnasium.Env):
         print("=== ENVIRONMENT RESET ===")
         self.game.start()
 
-        state_rwd = self.bot.get_state_from_world()
-        observation = state_rwd["state"]["map"]
+        # state_rwd = self.bot.get_state_from_world()
+        # observation = state_rwd["state"]["map"]
+        observation = np.zeros((244, 244, 3), dtype=np.uint8)
         reward = 0
-        info = state_rwd["info"]
+        info = None
         
         return observation, reward, False, info
 
     def _run_game(self):
         result = run_game(  # run_game is a function that runs the game.
             maps.get(self.map_name), # the map we are playing on
-            [Bot(Race.Protoss, self.bot()), # runs our coded bot, protoss race, and we pass our bot object 
+            [Bot(Race.Protoss, self.bot), # runs our coded bot, protoss race, and we pass our bot object 
             Computer(Race.Zerg, Difficulty.Hard)], # runs a pre-made computer agent, zerg race, with a hard difficulty.
             realtime=False, # When set to True, the agent is limited in how long each step can take to process.
         )
@@ -109,3 +110,14 @@ class Sc2Env(gymnasium.Env):
             reward += -500
         
         return reward
+
+class PreprocessWrapper(gymnasium.ObservationWrapper):
+    def __init__(self, env):
+        super(PreprocessWrapper, self).__init__(env)
+        self.observation_space = Box(low=0, high=1, shape=(224, 224, 3), dtype=np.float32)
+
+    def observation(self, obs):
+        # Assuming obs is an image represented as uint8 values in range [0, 255]
+        # Convert the image to float32 and scale to range [0, 1]
+        processed_obs = obs.astype(np.float32) / 255.0
+        return processed_obs
