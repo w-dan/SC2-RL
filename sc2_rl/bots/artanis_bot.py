@@ -1,33 +1,48 @@
+import json
+import math
 import sys
-import asyncio
+import time
 
+import aioredis
+import cv2
 import numpy as np
+from sc2 import maps  # maps method for loading maps to play in.
 from sc2.bot_ai import BotAI  # parent class we inherit from
+from sc2.data import Difficulty, Race
 from sc2.ids.unit_typeid import UnitTypeId
+from sc2.main import (  # function that facilitates actually running the agents in games
+    run_game,
+)
+from sc2.player import (  # wrapper for whether or not the agent is one of your bots, or a "computer" player
+    Bot,
+    Computer,
+)
 
+from sc2_rl.rl.sc2env import GameResult
 from sc2_rl.types.constants import MAX_WORKERS, RANGES
 
 
 # Ref: https://github.com/Sentdex/SC2RL
 class ArtanisBot(BotAI):
+    RACE = Race.Protoss
+
     def __init__(self, verbose):
+
         self.verbose = verbose
 
-        self.action_event = asyncio.Event()
-        self.current_action = None
-
-        self.step_event = asyncio.Event()
-        self.current_reward = None
-        self.current_info = None
+        self.redis = aioredis.from_url(
+            "redis://localhost:6379", encoding="utf-8", decode_responses=True
+        )
 
     async def on_step(
         self, iteration: int
     ):  # on_step is a method that is called every step of the game.
-        await self.action_event.wait()
+
+        action = await self.redis.blpop("action_queue", 0)
+        action = action[1]
 
         await self.distribute_workers()  # put idle workers back to work
 
-        action = self.current_action
         """
         0: expand (ie: move to next spot, or build to 16 (minerals)+3 assemblers+3)
         1: build voidray (random stargate)
@@ -139,6 +154,21 @@ class ArtanisBot(BotAI):
                 if self.verbose:
                     print(e)
 
+        state_rwd_action = {
+            "action": None,
+            "state": self._get_state_from_world().tolist(),
+            "micro-reward": self._calculate_micro_reward(),
+            "info": {
+                "iteration": iteration,
+                "n_VOIDRAY": self.units(UnitTypeId.VOIDRAY).amount,
+            },
+            "done": GameResult.PLAYING.value,
+        }
+        state_rwd_action = json.dumps(state_rwd_action).encode()
+
+        await self.redis.rpush("state_queue", state_rwd_action)
+
+    def _calculate_micro_reward(self):
         reward = 0
         try:
             attack_count = 0
@@ -157,40 +187,9 @@ class ArtanisBot(BotAI):
             print("reward", e)
             reward = 0
 
-        self.current_reward = reward
-        self.current_info = {
-            "iteration": iteration,
-            "n_VOIDRAY": self.units(UnitTypeId.VOIDRAY).amount,
-        }
+        return reward
 
-        self.action_event.clear()
-        self.step_event.set()
-
-    def step(self, action):
-        """
-        -> state: Inputs of Network
-            -> map (array (244,244,3))
-        -> micro-reward: Reward calculated by bot of microgame
-            (float)
-        -> info: Values used to calculate macro reward
-            -> iteration (float)
-            -> n_VOIDRAY (int)
-        """
-        # set action
-        self.current_action = action
-        self.action_event.set()
-
-        # wait step ends
-        self.step_event.wait()
-        self.step_event.clear()
-
-        return {
-            "state": self.get_state_from_world(),
-            "micro-reward": self.current_reward,
-            "info": self.current_info,
-        }
-
-    def get_state_from_world(self):
+    def _get_state_from_world(self):
         print("== WORLD STATE ==")
         print(self.game_info.map_size)
         print("== WORLD STATE ==")
@@ -207,17 +206,21 @@ class ArtanisBot(BotAI):
             if mineral.is_visible:
                 if self.verbose:
                     print(mineral.mineral_contents)
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     int(fraction * i) for i in c
                 ]
             else:
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [20, 75, 50]
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                    20,
+                    75,
+                    50,
+                ]
 
         # draw the enemy start location:
         for enemy_start_location in self.enemy_start_locations:
             pos = enemy_start_location
             c = [0, 0, 255]
-            state_map[np.ceil(pos.y)][np.ceil(pos.x)] = c
+            state_map[math.ceil(pos.y)][math.ceil(pos.x)] = c
 
         # draw the enemy units:
         for enemy_unit in self.enemy_units:
@@ -229,7 +232,9 @@ class ArtanisBot(BotAI):
                 if enemy_unit.health_max > 0
                 else 0.0001
             )
-            state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [int(fraction * i) for i in c]
+            state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                int(fraction * i) for i in c
+            ]
 
         # draw the enemy structures:
         for enemy_structure in self.enemy_structures:
@@ -241,7 +246,9 @@ class ArtanisBot(BotAI):
                 if enemy_structure.health_max > 0
                 else 0.0001
             )
-            state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [int(fraction * i) for i in c]
+            state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                int(fraction * i) for i in c
+            ]
 
         # draw our structures:
         for our_structure in self.structures:
@@ -255,7 +262,7 @@ class ArtanisBot(BotAI):
                     if our_structure.health_max > 0
                     else 0.0001
                 )
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     int(fraction * i) for i in c
                 ]
 
@@ -268,7 +275,7 @@ class ArtanisBot(BotAI):
                     if our_structure.health_max > 0
                     else 0.0001
                 )
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     int(fraction * i) for i in c
                 ]
 
@@ -284,11 +291,15 @@ class ArtanisBot(BotAI):
             fraction = vespene.vespene_contents / 2250
 
             if vespene.is_visible:
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     int(fraction * i) for i in c
                 ]
             else:
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [50, 20, 75]
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                    50,
+                    20,
+                    75,
+                ]
 
         # draw our units:
         for our_unit in self.units:
@@ -302,7 +313,7 @@ class ArtanisBot(BotAI):
                     if our_unit.health_max > 0
                     else 0.0001
                 )
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     int(fraction * i) for i in c
                 ]
 
@@ -315,8 +326,54 @@ class ArtanisBot(BotAI):
                     if our_unit.health_max > 0
                     else 0.0001
                 )
-                state_map[np.ceil(pos.y)][np.ceil(pos.x)] = [
+                state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     int(fraction * i) for i in c
                 ]
 
-        return {"map": state_map}
+        # return {"map": state_map}
+        return state_map
+
+
+artanis = ArtanisBot(1)
+result = run_game(  # run_game is a function that runs the game.
+    maps.get("Scorpion_1.01"),  # the map we are playing on
+    [
+        Bot(
+            Race.Protoss, artanis
+        ),  # runs our coded bot, protoss race, and we pass our bot object
+        Computer(Race.Zerg, Difficulty.Hard),
+    ],  # runs a pre-made computer agent, zerg race, with a hard difficulty.
+    realtime=False,  # When set to True, the agent is limited in how long each step can take to process.
+)
+
+
+if str(result) == "Result.Victory":
+    game_result = GameResult.WIN
+else:
+    game_result = GameResult.LOSE
+
+with open("results.txt", "a") as f:
+    f.write(f"{result}\n")
+
+
+map_state = np.zeros((224, 224, 3), dtype=np.uint8)
+state_rwd_action = {
+    "action": None,
+    # "state": {"map": map_state},
+    "state": map_state.tolist(),
+    "micro-reward": 0,
+    "info": {
+        "iteration": None,
+        "n_VOIDRAY": 0,
+    },
+    "done": game_result.value,
+}
+state_rwd_action = json.dumps(state_rwd_action).encode()
+
+artanis.redis.rpush("state_queue", state_rwd_action)
+
+
+cv2.destroyAllWindows()
+cv2.waitKey(1)
+time.sleep(3)
+sys.exit()

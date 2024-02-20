@@ -1,19 +1,11 @@
 # essentials
 import numpy as np
-import tensorflow as tf
-from gymnasium.spaces import Discrete
 
 # policies
-from tf_agents.policies import random_tf_policy  # testing random as baseline
-from tf_agents.policies import py_policy, random_py_policy, scripted_py_policy
 from tf_agents.policies.random_tf_policy import RandomTFPolicy
-from tf_agents.specs import array_spec
 
 # custom
 # from sc2env import Sc2Env
-from sc2_rl.bots.artanis_bot import (  # TODO: import properly (can't resolve path)
-    ArtanisBot,
-)
 
 # # layers
 # from tensorflow.keras.models import Sequential
@@ -28,7 +20,7 @@ class RandomPolicy:
     def take_action(self, time_step):
         # random action
         action_step = self.policy.action(time_step)
-        action = action_step.action.numpy()
+        action = action_step.action.numpy()[0]
         print(f"[+] Taking action: {action}")
 
         return action
