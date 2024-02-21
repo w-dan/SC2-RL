@@ -26,8 +26,6 @@ Since the execution of the exosystem has two different times, since half part is
 
 ## Setup steps
 
-- If you are using windows, you need to install [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/), once it is installed, select `Desktop development with C++`. After installed, `gymnasium[box2d]` will work.
-
 - If you are using WSL, follow this steps: [WSL Installation](https://github.com/BurnySc2/python-sc2/blob/develop/README.md#wsl)
 
 1. [Starcraft II](https://starcraft2.blizzard.com/en-us/) installed in your system
