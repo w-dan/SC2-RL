@@ -18,7 +18,7 @@ Displays the components and the interactions between each other.
 
 ![Components diagram](./imgs/diagramas-components.png)
 
-### Execitiom diagram
+### Execution diagram
 
 Since the execution of the exosystem has two different times, since half part is asyncronous and the other is synchronus, the diagram tries to reflect what is the workflow.
 
@@ -58,3 +58,23 @@ In case you are having trouble with environment, once done step 4.3, repeat step
 - [Alvaro Tena](https://github.com/AlvaroTena)
 
 Setup created following [setup tutorial](https://pythonprogramming.net/intro-python-sc2-introduction-starcraft-2-ai/) by [sendtex](https://www.youtube.com/@sentdex)  
+
+## Contribute
+
+### Commit && PR Messages
+
+```txt
+[MODULE][FIX|ADD|DELETE] Summary of modifications
+
+* [MODULE2][ADD] List of modifications from a general perspective
+```
+
+#### Example
+
+```txt
+[SC2-RL][FIX] Diagrams && subprocess
+* [README][ADD] Execution && Component diagram
+* [BOT][ADD] Change from `aioredis` to `redis.asyncio`
+* [RUN_GAME][DELETED]
+* [SC2ENV][FIX] Subprocess platform
+```
