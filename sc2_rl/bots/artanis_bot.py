@@ -4,16 +4,12 @@ import math
 import sys
 import time
 
-import aioredis
 import cv2
 import numpy as np
 import redis
-
-# maps method for loading maps to play in.
-from sc2 import maps
-
-# parent class we inherit from
-from sc2.bot_ai import BotAI
+import redis.asyncio as aioredis
+from sc2 import maps  # maps method for loading maps to play in.
+from sc2.bot_ai import BotAI  # parent class we inherit from
 from sc2.data import Difficulty, Race
 from sc2.ids.unit_typeid import UnitTypeId
 

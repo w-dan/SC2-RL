@@ -1,4 +1,5 @@
 import json
+import platform
 import subprocess
 import time
 from enum import Enum
@@ -60,12 +61,21 @@ class Sc2Env(py_environment.PyEnvironment):
             self.game_process.kill()
             self.game_process.wait()
 
-        self.game_process = subprocess.Popen(
-            [
-                "python3",
-                f"sc2_rl/bots/artanis_bot.py",
-            ],
-        )
+        if platform.system() == "Windows":
+            self.game_process = subprocess.Popen(
+                [
+                    ".venv/Scripts/python.exe",
+                    "sc2_rl/bots/artanis_bot.py",
+                ],
+            )
+        elif platform.system() == "Linux":
+            self.game_process = subprocess.Popen(
+                [
+                    ".venv/scripts/python",
+                    "sc2_rl/bots/artanis_bot.py",
+                ],
+            )
+
         return ts.restart(self._state)
 
     def _step(self, action):

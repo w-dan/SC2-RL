@@ -1,6 +1,4 @@
-import multiprocessing
 import os
-import platform
 
 import tensorflow as tf
 from tf_agents.agents.dqn import dqn_agent
@@ -10,7 +8,6 @@ from tf_agents.networks import q_network
 from tf_agents.policies import policy_saver
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
 from tf_agents.trajectories import time_step as ts
-from tf_agents.trajectories import trajectory
 from tf_agents.utils import common
 
 from sc2_rl.rl.dqn import RandomPolicy
@@ -35,10 +32,6 @@ def compute_avg_return(env, agent, num_episodes=10):
 
 
 def main():
-    if platform.system() == "Windows":
-        print("[+] Freezing multiprocessing support...")
-        multiprocessing.freeze_support()
-
     env = create_environment(MAP_NAME, verbose=verbose)
 
     train_env = tf_py_environment.TFPyEnvironment(env)
