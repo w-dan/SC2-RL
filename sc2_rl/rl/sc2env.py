@@ -6,6 +6,7 @@ from enum import Enum
 import cv2
 import numpy as np
 import redis
+import tensorflow as tf
 from tf_agents.environments import py_environment, tf_py_environment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
@@ -27,11 +28,11 @@ class Sc2Env(py_environment.PyEnvironment):
         self.redis_client = redis.Redis(host="localhost", port=6379, db=0)
 
         self._action_spec = array_spec.BoundedArraySpec(
-            shape=(1,), dtype=np.int32, minimum=0, maximum=2, name="action"
+            shape=(), dtype=np.int32, minimum=0, maximum=5, name="action"
         )
         self._observation_spec = array_spec.BoundedArraySpec(
             shape=(224, 224, 3),
-            dtype=np.uint8,
+            dtype=np.float32,
             minimum=0,
             maximum=255,
             name="observation",
@@ -50,13 +51,16 @@ class Sc2Env(py_environment.PyEnvironment):
         return self._observation_spec
 
     def _reset(self):
-        # self.future = self.executor.submit(self._start_game)
         print("RESETTING ENVIRONMENT!!!!!!!!!!!!!")
         self._state = np.zeros((224, 224, 3), dtype=np.uint8)
         self._episode_ended = False
         self.result = GameResult.PLAYING
 
-        subprocess.Popen(
+        if hasattr(self, "game_process") and self.game_process.poll() is None:
+            self.game_process.kill()
+            self.game_process.wait()
+
+        self.game_process = subprocess.Popen(
             [
                 "python3",
                 f"sc2_rl/bots/artanis_bot.py",
@@ -79,7 +83,7 @@ class Sc2Env(py_environment.PyEnvironment):
         iteration = state_rwd_action["info"]["iteration"]
         self.result = state_rwd_action["done"]
 
-        if self.verbose >= 2:
+        if self.verbose >= 3:
             cv2.imshow(
                 "map",
                 cv2.flip(
@@ -91,15 +95,15 @@ class Sc2Env(py_environment.PyEnvironment):
             )
             cv2.waitKey(1)
 
-        if self.verbose >= 3:
+        if self.verbose >= 2:
             # save map image into "replays dir"
             cv2.imwrite(f"replays/{int(time.time())}-{iteration}.png", self._state)
 
         if self.verbose >= 1:
             info = state_rwd_action["info"]
-            if iteration % 100 == 0:
+            if iteration is not None and iteration % 100 == 0:
                 print(
-                    f"Iter: {iteration}. RWD: {micro_reward}. Void Ray: {info['n_VOIDRAY']}"
+                    f"Iter: {iteration}. Action: {action}. RWD: {micro_reward}. Void Ray: {info['n_VOIDRAY']}"
                 )
 
         self.iteration = iteration
@@ -111,7 +115,6 @@ class Sc2Env(py_environment.PyEnvironment):
             reward = self._calculate_macro_reward(state_rwd_action["info"])
             self._episode_ended = True
 
-        print(self._state.shape)
         return (
             ts.termination(self._state, reward)
             if self._episode_ended
@@ -121,13 +124,65 @@ class Sc2Env(py_environment.PyEnvironment):
     def _calculate_macro_reward(self, info) -> float:
         reward = 0
 
-        if self.result.value == GameResult.WIN.value:
-            reward += REWARD.WIN.value
-        elif self.result.value == GameResult.LOSE.value:
-            reward += REWARD.LOSE.value
+        if self.result == GameResult.WIN.value:
+            reward += REWARD.WIN
+        elif self.result == GameResult.LOSE.value:
+            reward += REWARD.LOSE
 
         return reward
 
 
+def preprocess_observation(observation, target_shape=(224, 224)):
+    # Resize observation to the target shape
+    observation = tf.convert_to_tensor(observation)
+    observation = tf.cast(observation, tf.float32)
+    observation = tf.image.resize(observation, target_shape)
+    return observation
+
+
+class PreprocessEnvironmentWrapper(py_environment.PyEnvironment):
+    def __init__(self, env):
+        super().__init__()
+        self._env = env
+
+    def preprocess_observation(self, observation):
+        return preprocess_observation(observation)
+
+    def _step(self, action):
+        time_step = self._env.step(action)
+        processed_observation = self.preprocess_observation(time_step.observation)
+        return ts.TimeStep(
+            time_step.step_type,
+            time_step.reward,
+            time_step.discount,
+            processed_observation,
+        )
+
+    def _reset(self):
+        time_step = self._env.reset()
+        processed_observation = self.preprocess_observation(time_step.observation)
+        return ts.TimeStep(
+            time_step.step_type,
+            time_step.reward,
+            time_step.discount,
+            processed_observation,
+        )
+
+    def action_spec(self):
+        return self._env.action_spec()
+
+    def observation_spec(self):
+        return self._env.observation_spec()
+
+    def get_info(self):
+        return self._env.get_info()
+
+    def get_state(self):
+        return self._env.get_state()
+
+    def set_state(self, state):
+        return self._env.set_state(state)
+
+
 def create_environment(map_name: str, verbose: int):
-    return tf_py_environment.TFPyEnvironment(Sc2Env(map_name, verbose))
+    return PreprocessEnvironmentWrapper(Sc2Env(map_name, verbose))

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import math
 import sys
@@ -6,20 +7,24 @@ import time
 import aioredis
 import cv2
 import numpy as np
-from sc2 import maps  # maps method for loading maps to play in.
-from sc2.bot_ai import BotAI  # parent class we inherit from
+import redis
+
+# maps method for loading maps to play in.
+from sc2 import maps
+
+# parent class we inherit from
+from sc2.bot_ai import BotAI
 from sc2.data import Difficulty, Race
 from sc2.ids.unit_typeid import UnitTypeId
-from sc2.main import (  # function that facilitates actually running the agents in games
-    run_game,
-)
-from sc2.player import (  # wrapper for whether or not the agent is one of your bots, or a "computer" player
-    Bot,
-    Computer,
-)
 
+# function that facilitates actually running the agents in games
+from sc2.main import run_game
+
+# wrapper for whether or not the agent is one of your bots, or a "computer" player
+from sc2.player import Bot, Computer
+
+import sc2_rl.types.constants as const
 from sc2_rl.rl.sc2env import GameResult
-from sc2_rl.types.constants import MAX_WORKERS, RANGES
 
 
 # Ref: https://github.com/Sentdex/SC2RL
@@ -34,21 +39,20 @@ class ArtanisBot(BotAI):
             "redis://localhost:6379", encoding="utf-8", decode_responses=True
         )
 
-    async def on_step(
-        self, iteration: int
-    ):  # on_step is a method that is called every step of the game.
-
-        action = await self.redis.blpop("action_queue", 0)
-        action = action[1]
-
+    async def on_step(self, iteration: int):
+        """`on_step` is a method that is called every step of the game."""
         await self.distribute_workers()  # put idle workers back to work
 
+        action = await self.redis.blpop("action_queue", 0)
+        action = int(action[1])
         """
         0: expand (ie: move to next spot, or build to 16 (minerals)+3 assemblers+3)
-        1: build voidray (random stargate)
-        2: attack (known buildings, units, then enemy base, just go in logical order.)
+        1: build stargate (or up to one) (evenly)
+        2: build voidray (evenly)
+        3: send scout (evenly/random/closest to enemy?)
+        4: attack (known buildings, units, then enemy base, just go in logical order.)
+        5: voidray flee (back to base)
         """
-
         # 0: expand (ie: move to next spot, or build to 16 (minerals)+3 assemblers+3)
         if action == 0:
             try:
@@ -67,10 +71,11 @@ class ArtanisBot(BotAI):
                     for nexus in self.townhalls:
                         # get worker count for this nexus:
                         worker_count = len(
-                            self.workers.closer_than(RANGES.BUILD, nexus)
+                            self.workers.closer_than(const.RANGES.BUILD, nexus)
                         )
                         if worker_count < (
-                            MAX_WORKERS.NEXUS + 2 * MAX_WORKERS.VESPENE_GEYSER
+                            const.MAX_WORKERS.NEXUS
+                            + 2 * const.MAX_WORKERS.VESPENE_GEYSER
                         ):
                             if nexus.is_idle and self.can_afford(UnitTypeId.PROBE):
                                 nexus.train(UnitTypeId.PROBE)
@@ -79,7 +84,7 @@ class ArtanisBot(BotAI):
                         # have we built enough assimilators?
                         # find vespene geysers
                         for geyser in self.vespene_geyser.closer_than(
-                            RANGES.BUILD, nexus
+                            const.RANGES.BUILD, nexus
                         ):
                             # build assimilator if there isn't one already:
                             if not self.can_afford(UnitTypeId.ASSIMILATOR):
@@ -102,8 +107,58 @@ class ArtanisBot(BotAI):
                 if self.verbose:
                     print(e)
 
-        # 1: build voidray (random stargate)
+        # 1: build stargate (or up to one) (evenly)
         elif action == 1:
+            try:
+                # iterate thru all nexus and see if these buildings are close
+                for nexus in self.townhalls:
+                    # is there is not a gateway close:
+                    if (
+                        not self.structures(UnitTypeId.GATEWAY)
+                        .closer_than(const.RANGES.BUILD, nexus)
+                        .exists
+                    ):
+                        # if we can afford it:
+                        if (
+                            self.can_afford(UnitTypeId.GATEWAY)
+                            and self.already_pending(UnitTypeId.GATEWAY) == 0
+                        ):
+                            # build gateway
+                            await self.build(UnitTypeId.GATEWAY, near=nexus)
+
+                    # if the is not a cybernetics core close:
+                    if (
+                        not self.structures(UnitTypeId.CYBERNETICSCORE)
+                        .closer_than(const.RANGES.BUILD, nexus)
+                        .exists
+                    ):
+                        # if we can afford it:
+                        if (
+                            self.can_afford(UnitTypeId.CYBERNETICSCORE)
+                            and self.already_pending(UnitTypeId.CYBERNETICSCORE) == 0
+                        ):
+                            # build cybernetics core
+                            await self.build(UnitTypeId.CYBERNETICSCORE, near=nexus)
+
+                    # if there is not a stargate close:
+                    if (
+                        not self.structures(UnitTypeId.STARGATE)
+                        .closer_than(const.RANGES.BUILD, nexus)
+                        .exists
+                    ):
+                        # if we can afford it:
+                        if (
+                            self.can_afford(UnitTypeId.STARGATE)
+                            and self.already_pending(UnitTypeId.STARGATE) == 0
+                        ):
+                            # build stargate
+                            await self.build(UnitTypeId.STARGATE, near=nexus)
+
+            except Exception as e:
+                print(e)
+
+        # 2: build voidray (random stargate)
+        elif action == 2:
             try:
                 if self.can_afford(UnitTypeId.VOIDRAY):
                     for sg in self.structures(UnitTypeId.STARGATE).ready.idle:
@@ -114,26 +169,53 @@ class ArtanisBot(BotAI):
                 if self.verbose:
                     print(e)
 
-        # 2: attack (known buildings, units, then enemy base, just go in logical order.)
-        elif action == 2:
+        # 3: send scout
+        elif action == 3:
+            # are there any idle probes:
+            try:
+                self.last_sent
+            except:
+                self.last_sent = 0
+
+            # if self.last_sent doesnt exist yet:
+            if (iteration - self.last_sent) > const.SCOUT_TIMEOUT:
+                try:
+                    if self.units(UnitTypeId.PROBE).idle.exists:
+                        # pick one of these randomly:
+                        probe = np.random.choice(self.units(UnitTypeId.PROBE).idle)
+                    else:
+                        probe = np.random.choice(self.units(UnitTypeId.PROBE))
+                    # send probe towards enemy base:
+                    probe.attack(self.enemy_start_locations[0])
+                    self.last_sent = iteration
+
+                except Exception as e:
+                    pass
+
+        # 4: attack (known buildings, units, then enemy base, just go in logical order.)
+        elif action == 4:
             try:
                 # take all void rays and attack!
                 for voidray in self.units(UnitTypeId.VOIDRAY).idle:
                     # if we can attack:
-                    if self.enemy_units.closer_than(RANGES.ATTACK, voidray):
+                    if self.enemy_units.closer_than(const.RANGES.ATTACK, voidray):
                         # attack!
                         voidray.attack(
                             np.random.choice(
-                                self.enemy_units.closer_than(RANGES.ATTACK, voidray)
+                                self.enemy_units.closer_than(
+                                    const.RANGES.ATTACK, voidray
+                                )
                             )
                         )
                     # if we can attack:
-                    elif self.enemy_structures.closer_than(RANGES.ATTACK, voidray):
+                    elif self.enemy_structures.closer_than(
+                        const.RANGES.ATTACK, voidray
+                    ):
                         # attack!
                         voidray.attack(
                             np.random.choice(
                                 self.enemy_structures.closer_than(
-                                    RANGES.ATTACK, voidray
+                                    const.RANGES.ATTACK, voidray
                                 )
                             )
                         )
@@ -153,6 +235,12 @@ class ArtanisBot(BotAI):
             except Exception as e:
                 if self.verbose:
                     print(e)
+
+        # 5: voidray flee (back to base)
+        elif action == 5:
+            if self.units(UnitTypeId.VOIDRAY).amount >= const.MIN_VOIDRAY:
+                for vr in self.units(UnitTypeId.VOIDRAY):
+                    vr.attack(self.start_location)
 
         state_rwd_action = {
             "action": None,
@@ -177,8 +265,10 @@ class ArtanisBot(BotAI):
                 # if voidray is attacking and is in range of enemy unit:
                 if voidray.is_attacking and voidray.target_in_range:
                     if self.enemy_units.closer_than(
-                        RANGES.REWARD, voidray
-                    ) or self.enemy_structures.closer_than(RANGES.REWARD, voidray):
+                        const.RANGES.REWARD, voidray
+                    ) or self.enemy_structures.closer_than(
+                        const.RANGES.REWARD, voidray
+                    ):
                         # reward += 0.005 # original was 0.005, decent results, but let's 3x it.
                         reward += 0.015
                         attack_count += 1
@@ -190,9 +280,10 @@ class ArtanisBot(BotAI):
         return reward
 
     def _get_state_from_world(self):
-        print("== WORLD STATE ==")
-        print(self.game_info.map_size)
-        print("== WORLD STATE ==")
+        if self.verbose:
+            print("== WORLD STATE ==")
+            print(self.game_info.map_size)
+            print("== WORLD STATE ==")
 
         state_map = np.zeros(
             (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
@@ -207,7 +298,7 @@ class ArtanisBot(BotAI):
                 if self.verbose:
                     print(mineral.mineral_contents)
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                    int(fraction * i) for i in c
+                    np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
             else:
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
@@ -233,7 +324,7 @@ class ArtanisBot(BotAI):
                 else 0.0001
             )
             state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                int(fraction * i) for i in c
+                np.uint8(max(0, min(255, int(fraction * i)))) for i in c
             ]
 
         # draw the enemy structures:
@@ -247,7 +338,7 @@ class ArtanisBot(BotAI):
                 else 0.0001
             )
             state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                int(fraction * i) for i in c
+                np.uint8(max(0, min(255, int(fraction * i)))) for i in c
             ]
 
         # draw our structures:
@@ -263,7 +354,7 @@ class ArtanisBot(BotAI):
                     else 0.0001
                 )
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                    int(fraction * i) for i in c
+                    np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
 
             else:
@@ -276,7 +367,7 @@ class ArtanisBot(BotAI):
                     else 0.0001
                 )
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                    int(fraction * i) for i in c
+                    np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
 
         # draw the vespene geysers:
@@ -292,7 +383,7 @@ class ArtanisBot(BotAI):
 
             if vespene.is_visible:
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                    int(fraction * i) for i in c
+                    np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
             else:
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
@@ -314,7 +405,7 @@ class ArtanisBot(BotAI):
                     else 0.0001
                 )
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                    int(fraction * i) for i in c
+                    np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
 
             else:
@@ -327,23 +418,24 @@ class ArtanisBot(BotAI):
                     else 0.0001
                 )
                 state_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                    int(fraction * i) for i in c
+                    np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
 
         # return {"map": state_map}
         return state_map
 
 
-artanis = ArtanisBot(1)
+ARTANIS = ArtanisBot(0)
 result = run_game(  # run_game is a function that runs the game.
     maps.get("Scorpion_1.01"),  # the map we are playing on
     [
         Bot(
-            Race.Protoss, artanis
+            Race.Protoss, ARTANIS
         ),  # runs our coded bot, protoss race, and we pass our bot object
         Computer(Race.Zerg, Difficulty.Hard),
     ],  # runs a pre-made computer agent, zerg race, with a hard difficulty.
     realtime=False,  # When set to True, the agent is limited in how long each step can take to process.
+    disable_fog=False,
 )
 
 
@@ -352,7 +444,7 @@ if str(result) == "Result.Victory":
 else:
     game_result = GameResult.LOSE
 
-with open("results.txt", "a") as f:
+with open("output/results.txt", "a") as f:
     f.write(f"{result}\n")
 
 
@@ -370,7 +462,8 @@ state_rwd_action = {
 }
 state_rwd_action = json.dumps(state_rwd_action).encode()
 
-artanis.redis.rpush("state_queue", state_rwd_action)
+redis = redis.Redis(host="localhost", port=6379, db=0)
+redis.rpush("state_queue", state_rwd_action)
 
 
 cv2.destroyAllWindows()
