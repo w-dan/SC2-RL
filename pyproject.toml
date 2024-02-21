@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "sc2-rl"
+version = "0.1.0"
+description = ""
+authors = ["blitty-codes", "AlvaroTena", "w-dan"]
+readme = "README.md"
+packages = [{include = "sc2_rl"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+opencv-python = "^4.9.0.80"
+burnysc2 = "^6.5.0"
+redis = "^5.0.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
