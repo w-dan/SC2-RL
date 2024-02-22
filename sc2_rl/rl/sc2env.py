@@ -83,8 +83,18 @@ class Sc2Env(py_environment.PyEnvironment):
             # If the episode ended, automatically reset the environment
             return self._reset()
 
-        self.redis_client.rpush("action_queue", int(action))
-        _, state_rwd_action = self.redis_client.blpop("state_queue", timeout=0)
+        try:
+            self.redis_client.rpush("action_queue", int(action))
+            _, state_rwd_action = self.redis_client.blpop("state_queue", timeout=0)
+        except Exception as e:
+            # If redis is not up, then kill game if executed
+            print(f"There was an error using redis!!\n{e}")
+            print(f"Shutting down game...")
+            if hasattr(self, "game_process") and self.game_process.poll() is None:
+                self.game_process.kill()
+                self.game_process.wait()
+            print("Game is down!")
+            exit(2)
 
         state_rwd_action = json.loads(state_rwd_action.decode())
 
