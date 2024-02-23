@@ -12,13 +12,8 @@ from tf_agents.environments import py_environment, tf_py_environment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 
-from sc2_rl.types.constants import REWARD
-
-
-class GameResult(Enum):
-    PLAYING = 0
-    WIN = 1
-    LOSE = 2
+import sc2_rl.types.game as game_info
+import sc2_rl.types.rewards as rwd
 
 
 # https://gymnasium.farama.org/api/env/
@@ -27,9 +22,10 @@ class Sc2Env(py_environment.PyEnvironment):
         super(Sc2Env, self).__init__()
 
         self.redis_client = redis.Redis(host="localhost", port=6379, db=0)
+        self.redis_client.flushall()
 
         self._action_spec = array_spec.BoundedArraySpec(
-            shape=(), dtype=np.int32, minimum=0, maximum=5, name="action"
+            shape=(), dtype=np.int32, minimum=0, maximum=7, name="action"
         )
         self._observation_spec = array_spec.BoundedArraySpec(
             shape=(224, 224, 3),
@@ -42,8 +38,8 @@ class Sc2Env(py_environment.PyEnvironment):
         self._episode_ended = False
         self.verbose = verbose
         self.map_name = map_name
-        self.result = GameResult.PLAYING
-        self.iteration = 0
+        self.game_status = game_info.GameResult.PLAYING
+        self.game_tick = 0
 
     def action_spec(self):
         return self._action_spec
@@ -53,9 +49,10 @@ class Sc2Env(py_environment.PyEnvironment):
 
     def _reset(self):
         print("RESETTING ENVIRONMENT!!!!!!!!!!!!!")
+        self.acmrwd = 0.0
         self._state = np.zeros((224, 224, 3), dtype=np.uint8)
         self._episode_ended = False
-        self.result = GameResult.PLAYING
+        self.game_status = game_info.GameResult.PLAYING
 
         if hasattr(self, "game_process") and self.game_process.poll() is None:
             self.game_process.kill()
@@ -71,8 +68,8 @@ class Sc2Env(py_environment.PyEnvironment):
         elif platform.system() == "Linux":
             self.game_process = subprocess.Popen(
                 [
-                    ".venv/scripts/python",
-                    "sc2_rl/bots/artanis_bot.py",
+                    "python",
+                    "sc2_rl/sc2/artanis_bot.py",
                 ],
             )
 
@@ -90,10 +87,21 @@ class Sc2Env(py_environment.PyEnvironment):
 
         self._state = np.array(state_rwd_action["state"], dtype=np.uint8)
         micro_reward = state_rwd_action["micro-reward"]
-        iteration = state_rwd_action["info"]["iteration"]
-        self.result = state_rwd_action["done"]
+        game_tick = state_rwd_action["info"]["game_tick"]
+        self.game_status = state_rwd_action["game_status"]
 
-        if self.verbose >= 3:
+        self.game_tick = game_tick if game_tick is not None else self.game_tick + 1
+
+        if self.game_status == game_info.GameResult.PLAYING:
+            reward = micro_reward
+            self._episode_ended = False
+        else:
+            reward = self._calculate_macro_reward(state_rwd_action["info"])
+            self._episode_ended = True
+
+        self.acmrwd += reward
+
+        if self.verbose >= 2:
             cv2.imshow(
                 "map",
                 cv2.flip(
@@ -105,25 +113,18 @@ class Sc2Env(py_environment.PyEnvironment):
             )
             cv2.waitKey(1)
 
-        if self.verbose >= 2:
+        if self.verbose >= 3:
             # save map image into "replays dir"
-            cv2.imwrite(f"replays/{int(time.time())}-{iteration}.png", self._state)
+            cv2.imwrite(f"replays/{int(time.time())}-{self.game_tick}.png", self._state)
 
         if self.verbose >= 1:
             info = state_rwd_action["info"]
-            if iteration is not None and iteration % 100 == 0:
+            if (
+                self.game_tick is not None and self.game_tick % 100 == 0
+            ) or self._episode_ended:
                 print(
-                    f"Iter: {iteration}. Action: {action}. RWD: {micro_reward}. Void Ray: {info['n_VOIDRAY']}"
+                    f"Game Tick: {self.game_tick}. Total reward: {self.acmrwd:.4f}. Void Ray: {info['n_VOIDRAY']}"
                 )
-
-        self.iteration = iteration
-
-        if self.result == GameResult.PLAYING.value:
-            reward = micro_reward
-            self._episode_ended = False
-        else:
-            reward = self._calculate_macro_reward(state_rwd_action["info"])
-            self._episode_ended = True
 
         return (
             ts.termination(self._state, reward)
@@ -134,10 +135,10 @@ class Sc2Env(py_environment.PyEnvironment):
     def _calculate_macro_reward(self, info) -> float:
         reward = 0
 
-        if self.result == GameResult.WIN.value:
-            reward += REWARD.WIN
-        elif self.result == GameResult.LOSE.value:
-            reward += REWARD.LOSE
+        if self.game_status == game_info.GameResult.VICTORY:
+            reward += rwd.GAME_REWARD.WIN
+        elif self.game_status == game_info.GameResult.DEFEAT:
+            reward += rwd.GAME_REWARD.LOSE
 
         return reward
 
