@@ -17,10 +17,12 @@ class BUILD_REWARD:
 
 
 class TROOPS_REWARD:
-    PROBE_SCOUTING_STATIC = 0.25  # DEBUG
+    PROBE_SCOUTING_STATIC = 0.2  # DEBUG
     VOIDRAY_TRAINED = 0.1
     PROBE_SCOUTING = 0.002
-    PROBE_DESTROY_SCOUTING = -0.125
+    PROBE_DESTROY_SCOUTING = -0.15
+    NO_VOIDRAY_ATTACK = -0.2
+    NO_TIMEOUT_SCOUT = -0.3
 
 
 class MicroReward:
@@ -130,3 +132,9 @@ class RewardManager:
         self.next_tick_rewards = 0
 
         return accumulated_rewards
+
+    def apply_unsuccessfull_action(self, reward: MicroReward):
+        print(
+            f"Try action '{reward.action.name}' unsuccessfully from game tick {reward.game_tick} received {reward.reward:.4f} reward"
+        )
+        self.next_tick_rewards += reward.reward

@@ -64,22 +64,17 @@ class ArtanisBot(BotAI):
         action = Action(int(action[1]))
 
         if action == Action.BUILD_PYLON:
-            await self.chat_send("Building Pylon", team_only=True)
-            await self.build_pylon(iteration, action)
+            if self.supply_left < 10:
+                await self.chat_send("Building Pylon", team_only=True)
+                await self.build_pylon(iteration, action)
 
         elif action == Action.EXPAND:
             await self.chat_send("Expanding", team_only=True)
             try:
                 expanded = False
-                if self.supply_left < 10:
-                    expanded = await self.build_pylon(iteration, action) or expanded
-
-                if not expanded:
-                    for nexus in self.townhalls:
-                        expanded = self.build_probe(nexus) or expanded
-                        expanded = (
-                            await self.build_possible_assimilators(nexus) or expanded
-                        )
+                for nexus in self.townhalls:
+                    expanded = self.build_probe(nexus) or expanded
+                    expanded = await self.build_possible_assimilators(nexus) or expanded
 
                 if not expanded:
                     await self.build_nexus(iteration)
@@ -119,10 +114,19 @@ class ArtanisBot(BotAI):
                 except Exception as e:
                     pass
 
+            else:
+                self.rewardMgr.apply_unsuccesfull_action(
+                    rewards.MicroReward(
+                        iteration,
+                        Action.SCOUT,
+                        rewards.TROOPS_REWARD.NO_TIMEOUT_SCOUT,
+                    )
+                )
+
         elif action == Action.ATTACK:
             await self.chat_send("Attacking", team_only=True)
             try:
-                self.attack_path()
+                self.attack_path(iteration)
 
             except Exception as e:
                 if self.verbose:
@@ -191,7 +195,7 @@ class ArtanisBot(BotAI):
 
     async def build_assimilator(self, geyser: Unit):
         # build assimilator if there isn't one already:
-        if self.can_afford(UnitTypeId.ASSIMILATOR):
+        if not self.can_afford(UnitTypeId.ASSIMILATOR):
             raise SupplyException
 
         if not self.structures(UnitTypeId.ASSIMILATOR).closer_than(2.0, geyser).exists:
@@ -329,11 +333,19 @@ class ArtanisBot(BotAI):
 
         self.last_sent = game_tick
 
-    def attack_path(self):
+    def attack_path(self, game_tick):
         # take all void rays and attack!
-        for voidray in self.units(UnitTypeId.VOIDRAY).idle:
-            target = self.select_attack_target(voidray)
-            self.perform_attack(voidray, target)
+        if self.units(UnitTypeId.VOIDRAY).exists:
+            for voidray in self.units(UnitTypeId.VOIDRAY).idle:
+                target = self.select_attack_target(voidray)
+                self.perform_attack(voidray, target)
+
+        else:
+            self.rewardMgr.apply_unsuccesfull_action(
+                rewards.MicroReward(
+                    game_tick, Action.ATTACK, rewards.TROOPS_REWARD.NO_VOIDRAY_ATTACK
+                )
+            )
 
     def select_attack_target(self, voidray: Unit):
         # Enemy units near
@@ -554,12 +566,7 @@ class ArtanisBot(BotAI):
                         break
 
                 elif reward.action == Action.EXPAND:
-                    if unit.type_id == UnitTypeId.PYLON:
-                        self.rewardMgr.add_reward(unit.tag, reward)
-                        self.build_queue.pop(order)
-                        break
-
-                    elif unit.type_id == UnitTypeId.NEXUS:
+                    if unit.type_id == UnitTypeId.NEXUS:
                         self.rewardMgr.add_reward(unit.tag, reward)
                         self.build_queue.pop(order)
                         break

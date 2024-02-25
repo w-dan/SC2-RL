@@ -1,8 +1,9 @@
 import os
 
 import tensorflow as tf
+import tqdm
 from tf_agents.agents.dqn import dqn_agent
-from tf_agents.drivers import dynamic_step_driver
+from tf_agents.drivers import dynamic_episode_driver, dynamic_step_driver
 from tf_agents.environments import suite_gym, tf_py_environment
 from tf_agents.networks import q_network
 from tf_agents.policies import TFPolicy, policy_saver
@@ -14,12 +15,12 @@ from sc2_rl.rl.dqn import RandomPolicy
 from sc2_rl.rl.sc2env import create_environment
 
 MAP_NAME = "Scorpion_1.01"
-verbose = 2
+verbose = 1
 
 
 def compute_avg_return(env, agent_policy, num_episodes=10):
     total_return = 0.0
-    for _ in range(num_episodes):
+    for _ in tqdm.tqdm(range(num_episodes), desc="Agent eval", unit=" games"):
         time_step = env.reset()
         episode_return = 0.0
         while not time_step.is_last():
@@ -32,15 +33,21 @@ def compute_avg_return(env, agent_policy, num_episodes=10):
 
 
 def main():
-    env = create_environment(MAP_NAME, verbose=verbose)
+    N = 1000
+    num_episodes_per_iteration = 10
+    num_iterations = N // num_episodes_per_iteration
 
-    train_env = tf_py_environment.TFPyEnvironment(env)
-    eval_env = tf_py_environment.TFPyEnvironment(env)
+    train_env = tf_py_environment.TFPyEnvironment(
+        create_environment(MAP_NAME, verbose=verbose)
+    )
+    eval_env = tf_py_environment.TFPyEnvironment(
+        create_environment(MAP_NAME, verbose=0)
+    )
 
     q_net = q_network.QNetwork(
-        env.observation_spec(),
-        env.action_spec(),
-        fc_layer_params=(100, 50, 25),
+        train_env.observation_spec(),
+        train_env.action_spec(),
+        fc_layer_params=(256, 256, 128),
         preprocessing_layers=tf.keras.layers.Lambda(lambda x: x / 255.0),
     )
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
@@ -53,6 +60,7 @@ def main():
         optimizer=optimizer,
         td_errors_loss_fn=common.element_wise_squared_loss,
         train_step_counter=global_step,
+        gamma=0.99,
     )
     agent.initialize()
 
@@ -60,42 +68,47 @@ def main():
         data_spec=agent.collect_data_spec,
         batch_size=train_env.batch_size,
         max_length=5000,
-        # device="gpu:*",
     )
-    collect_driver = dynamic_step_driver.DynamicStepDriver(
+    collect_driver = dynamic_episode_driver.DynamicEpisodeDriver(
         train_env,
         agent.collect_policy,
         observers=[replay_buffer.add_batch],
-        num_steps=2500,
+        num_episodes=num_episodes_per_iteration,
     )
 
-    # Initial data collection
-    collect_driver.run()
-
-    # Dataset generates trajectories with shape [BxTx...] where
-    # T = n_step_update + 1.
     dataset = replay_buffer.as_dataset(
-        num_parallel_calls=3,
+        num_parallel_calls=tf.data.experimental.AUTOTUNE,
         sample_batch_size=64,
         num_steps=2,
         single_deterministic_pass=False,
-    ).prefetch(3)
+    ).prefetch(tf.data.experimental.AUTOTUNE)
 
     iterator = iter(dataset)
 
-    # (Optional) Optimize by wrapping some of the code in a graph using TF function.
     agent.train = common.function(agent.train)
 
-    def train_one_iteration():
-        # Collect a few steps using collect_policy and save to the replay buffer.
-        collect_driver.run()
+    def train(num_iterations):
+        for iteration in range(num_iterations):
+            collect_driver.run()
 
-        # Sample a batch of data from the buffer and update the agent's network.
-        experience, unused_info = next(iterator)
-        train_loss = agent.train(experience)
+            total_loss = 0
+            for _ in range(num_episodes_per_iteration):
+                experience, _ = next(iterator)
+                train_loss = agent.train(experience)
+                total_loss += train_loss.loss
 
-        iteration = agent.train_step_counter.numpy()
-        print("iteration: {0} loss: {1}".format(iteration, train_loss.loss))
+            print(
+                f"Iteration: {iteration}, Loss: {total_loss / num_episodes_per_iteration}"
+            )
+
+            if iteration % 10 == 0:
+                avg_return = compute_avg_return(
+                    eval_env, agent.policy, 10
+                )  # Evaluar con 10 episodios
+                print(f"Iteration: {iteration}, Average Return: {avg_return}")
+
+            train_checkpointer.save(global_step)
+            tf_policy_saver.save(policy_dir)
 
     checkpoint_dir = os.path.join("output", "checkpoint")
     train_checkpointer = common.Checkpointer(
@@ -113,14 +126,8 @@ def main():
     policy_dir = os.path.join("output", "policy")
     tf_policy_saver = policy_saver.PolicySaver(agent.policy)
 
-    print("Training one iteration....")
-    train_one_iteration()
-
-    train_checkpointer.save(global_step)
-    tf_policy_saver.save(policy_dir)
-
-    avg_return = compute_avg_return(eval_env, agent.policy, 1)
-    print(f"Average return: {avg_return}")
+    print(f"Training {num_iterations} iterations....")
+    train(num_iterations)
 
 
 if __name__ == "__main__":
