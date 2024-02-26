@@ -15,7 +15,7 @@ from sc2_rl.rl.dqn import RandomPolicy
 from sc2_rl.rl.sc2env import create_environment
 
 MAP_NAME = "Scorpion_1.01"
-verbose = 1
+verbose = 3
 
 
 def compute_avg_return(env, agent_policy, num_episodes=10):
@@ -32,23 +32,47 @@ def compute_avg_return(env, agent_policy, num_episodes=10):
     return avg_return
 
 
-def main():
+def main(output):
     N = 1000
     num_episodes_per_iteration = 10
     num_iterations = N // num_episodes_per_iteration
 
     train_env = tf_py_environment.TFPyEnvironment(
-        create_environment(MAP_NAME, verbose=verbose)
+        create_environment(MAP_NAME, os.path.abspath("train"), verbose=verbose)
     )
-    eval_env = tf_py_environment.TFPyEnvironment(
-        create_environment(MAP_NAME, verbose=0)
-    )
+    # eval_env = tf_py_environment.TFPyEnvironment(
+    #     create_environment(MAP_NAME, os.path.abspath("env"), verbose=0)
+    # )
 
     q_net = q_network.QNetwork(
         train_env.observation_spec(),
         train_env.action_spec(),
-        fc_layer_params=(256, 256, 128),
-        preprocessing_layers=tf.keras.layers.Lambda(lambda x: x / 255.0),
+        preprocessing_layers={
+            "structures_state": tf.keras.models.Sequential(
+                [
+                    tf.keras.layers.Conv2D(
+                        16, (3, 3), activation="relu", input_shape=(224, 224, 3)
+                    ),
+                    tf.keras.layers.Conv2D(32, (3, 3), activation="relu"),
+                    tf.keras.layers.Flatten(),
+                ]
+            ),
+            "units_state": tf.keras.models.Sequential(
+                [
+                    tf.keras.layers.Conv2D(
+                        16, (3, 3), activation="relu", input_shape=(224, 224, 3)
+                    ),
+                    tf.keras.layers.Conv2D(32, (3, 3), activation="relu"),
+                    tf.keras.layers.Flatten(),
+                ]
+            ),
+            "minerals": tf.keras.layers.Dense(1),
+            "vespene": tf.keras.layers.Dense(1),
+            "supply_used": tf.keras.layers.Dense(1),
+            "supply_cap": tf.keras.layers.Dense(1),
+        },
+        preprocessing_combiner=tf.keras.layers.Concatenate(axis=-1),
+        fc_layer_params=(64, 32),
     )
     optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
     global_step = global_step = tf.Variable(0, dtype=tf.int64)
@@ -67,7 +91,7 @@ def main():
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
         data_spec=agent.collect_data_spec,
         batch_size=train_env.batch_size,
-        max_length=5000,
+        max_length=10,
     )
     collect_driver = dynamic_episode_driver.DynamicEpisodeDriver(
         train_env,
@@ -78,7 +102,7 @@ def main():
 
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=tf.data.experimental.AUTOTUNE,
-        sample_batch_size=64,
+        sample_batch_size=8,
         num_steps=2,
         single_deterministic_pass=False,
     ).prefetch(tf.data.experimental.AUTOTUNE)
@@ -101,11 +125,11 @@ def main():
                 f"Iteration: {iteration}, Loss: {total_loss / num_episodes_per_iteration}"
             )
 
-            if iteration % 10 == 0:
-                avg_return = compute_avg_return(
-                    eval_env, agent.policy, 10
-                )  # Evaluar con 10 episodios
-                print(f"Iteration: {iteration}, Average Return: {avg_return}")
+            # if iteration % 10 == 0:
+            #     avg_return = compute_avg_return(
+            #         eval_env, agent.policy, 10
+            #     )  # Evaluar con 10 episodios
+            #     print(f"Iteration: {iteration}, Average Return: {avg_return}")
 
             train_checkpointer.save(global_step)
             tf_policy_saver.save(policy_dir)
@@ -131,8 +155,7 @@ def main():
 
 
 if __name__ == "__main__":
-    os.makedirs("output/replays", exist_ok=True)
-    main()
+    main("output/")
     # saved_policy = tf.compat.v2.saved_model.load("output/policy/")
 
     # env = create_environment(MAP_NAME, verbose=verbose)
