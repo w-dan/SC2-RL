@@ -9,8 +9,12 @@ import cv2
 import numpy as np
 import redis
 import redis.asyncio as aioredis
-from sc2 import maps  # maps method for loading maps to play in.
-from sc2.bot_ai import BotAI  # parent class we inherit from
+
+# maps method for loading maps to play in.
+from sc2 import maps
+
+# parent class we inherit from
+from sc2.bot_ai import BotAI
 from sc2.data import Difficulty, Race
 from sc2.ids.unit_typeid import UnitTypeId
 
@@ -48,12 +52,6 @@ class ArtanisBot(BotAI):
 
     async def on_step(self, iteration: int):
         """`on_step` is a method that is called every step of the game."""
-        # self.rewardMgr.apply_scout_reward(
-        #     [
-        #         (scout, self.units.find_by_tag(scout).is_idle)
-        #         for scout in self.scout_list
-        #     ]
-        # )
 
         await self.distribute_workers()  # put idle workers back to work
 
@@ -369,8 +367,7 @@ class ArtanisBot(BotAI):
 
         state_rwd_action = {
             "state": {
-                "structures_state": self._get_structures_map().tolist(),
-                "units_state": self._get_units_map().tolist(),
+                "map_state": self._get_map_state().tolist(),
                 "minerals": self.minerals,
                 "vespene": self.vespene,
                 "supply_used": self.supply_used,
@@ -568,7 +565,6 @@ class ArtanisBot(BotAI):
                     if self.enemy_units.closer_than(
                         game.RANGES.REWARD, voidray
                     ) or self.enemy_structures.closer_than(game.RANGES.REWARD, voidray):
-                        # reward += 0.005 # original was 0.005, decent results, but let's 3x it.
                         reward += 0.015
                         attack_count += 1
 
@@ -578,31 +574,19 @@ class ArtanisBot(BotAI):
 
         return reward
 
-    def _get_structures_map(self):
-        # structures_map = np.zeros(
-        #     (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
-        # )
-
-        # for y in range(self.game_info.placement_grid.height - 1):
-        #     for x in range(self.game_info.placement_grid.width - 1):
-        #         if self.game_info.placement_grid.data_numpy[y, x]:
-        #             structures_map[y, x] = ColorPalette.GROUND.FREE
-        #         else:
-        #             structures_map[y, x] = ColorPalette.GROUND.OCCUPIED
-        structures_map = np.tile(
+    def _get_map_state(self):
+        map_state = np.tile(
             ColorPalette.GROUND.OCCUPIED,
             (
-                self.game_info.placement_grid.height,
-                self.game_info.placement_grid.width,
+                self.game_info.map_size.height,
+                self.game_info.map_size.width,
                 1,
             ),
         )
 
-        # Usar data_numpy para determinar las áreas libres y actualizar structures_map en consecuencia
-        free_areas = (
-            self.game_info.placement_grid.data_numpy != 0
-        )  # asumiendo que 0 indica áreas libres
-        structures_map[free_areas] = ColorPalette.GROUND.FREE
+        placement_areas = self.game_info.placement_grid.data_numpy != 0
+        pathing_areas = self.game_info.pathing_grid.data_numpy != 0
+        map_state[placement_areas | pathing_areas] = ColorPalette.GROUND.FREE
 
         # draw the minerals
         for mineral in self.mineral_field:
@@ -612,11 +596,11 @@ class ArtanisBot(BotAI):
             if mineral.is_visible:
                 if self.verbose:
                     print(mineral.mineral_contents)
-                structures_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                map_state[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
             else:
-                structures_map[math.ceil(pos.y)][
+                map_state[math.ceil(pos.y)][
                     math.ceil(pos.x)
                 ] = ColorPalette.RESOURCE.MINERAL_NOT_VISIBLE
 
@@ -624,7 +608,7 @@ class ArtanisBot(BotAI):
         for enemy_start_location in self.enemy_start_locations:
             pos = enemy_start_location
             c = ColorPalette.BUILD.ENEMY_NEXUS
-            structures_map[math.ceil(pos.y)][math.ceil(pos.x)] = c
+            map_state[math.ceil(pos.y)][math.ceil(pos.x)] = c
 
         # draw the enemy structures:
         for enemy_structure in self.enemy_structures:
@@ -636,7 +620,21 @@ class ArtanisBot(BotAI):
                 if enemy_structure.health_max > 0
                 else 0.0001
             )
-            structures_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+            map_state[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                np.uint8(max(0, min(255, int(fraction * i)))) for i in c
+            ]
+
+        # draw the enemy units:
+        for enemy_unit in self.enemy_units:
+            pos = enemy_unit.position
+            c = ColorPalette.UNIT.ENEMY
+            # get unit health fraction:
+            fraction = (
+                enemy_unit.health / enemy_unit.health_max
+                if enemy_unit.health_max > 0
+                else 0.0001
+            )
+            map_state[math.ceil(pos.y)][math.ceil(pos.x)] = [
                 np.uint8(max(0, min(255, int(fraction * i)))) for i in c
             ]
 
@@ -651,7 +649,6 @@ class ArtanisBot(BotAI):
                 else 0.0001
             )
 
-            # if it's a nexus:
             if our_structure.type_id == UnitTypeId.NEXUS:
                 c = ColorPalette.BUILD.NEXUS
 
@@ -673,72 +670,24 @@ class ArtanisBot(BotAI):
             else:
                 c = ColorPalette.BUILD.GENERIC
 
-            structures_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+            map_state[math.ceil(pos.y)][math.ceil(pos.x)] = [
                 np.uint8(max(0, min(255, int(fraction * i)))) for i in c
             ]
 
         # draw the vespene geysers:
         for vespene in self.vespene_geyser:
-            # draw these after buildings, since assimilators go over them.
-            # tried to denote some way that assimilator was on top, couldnt
-            # come up with anything. Tried by positions, but the positions arent identical. ie:
-            # vesp position: (50.5, 63.5)
-            # bldg positions: [(64.369873046875, 58.982421875), (52.85693359375, 51.593505859375),...]
             pos = vespene.position
             c = ColorPalette.RESOURCE.VESPENE
             fraction = vespene.vespene_contents / 2250
 
             if vespene.is_visible:
-                structures_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+                map_state[math.ceil(pos.y)][math.ceil(pos.x)] = [
                     np.uint8(max(0, min(255, int(fraction * i)))) for i in c
                 ]
             else:
-                structures_map[math.ceil(pos.y)][
+                map_state[math.ceil(pos.y)][
                     math.ceil(pos.x)
                 ] = ColorPalette.RESOURCE.VESPENE_NOT_VISIBLE
-
-        return structures_map
-
-    def _get_units_map(self):
-        # units_map = np.zeros(
-        #     (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
-        # )
-
-        # for y in range(self.game_info.pathing_grid.height - 1):
-        #     for x in range(self.game_info.pathing_grid.width - 1):
-        #         if self.game_info.pathing_grid.data_numpy[y, x]:
-        #             units_map[y, x] = ColorPalette.GROUND.FREE
-        #         else:
-        #             units_map[y, x] = ColorPalette.GROUND.OCCUPIED
-
-        units_map = np.tile(
-            ColorPalette.GROUND.OCCUPIED,
-            (
-                self.game_info.pathing_grid.height,
-                self.game_info.pathing_grid.width,
-                1,
-            ),
-        )
-
-        # Usar data_numpy para determinar las áreas libres y actualizar structures_map en consecuencia
-        free_areas = (
-            self.game_info.pathing_grid.data_numpy != 0
-        )  # asumiendo que 0 indica áreas libres
-        units_map[free_areas] = ColorPalette.GROUND.FREE
-
-        # draw the enemy units:
-        for enemy_unit in self.enemy_units:
-            pos = enemy_unit.position
-            c = ColorPalette.UNIT.ENEMY
-            # get unit health fraction:
-            fraction = (
-                enemy_unit.health / enemy_unit.health_max
-                if enemy_unit.health_max > 0
-                else 0.0001
-            )
-            units_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
-                np.uint8(max(0, min(255, int(fraction * i)))) for i in c
-            ]
 
         # draw our units:
         for our_unit in self.units:
@@ -758,10 +707,11 @@ class ArtanisBot(BotAI):
                 if our_unit.health_max > 0
                 else 0.0001
             )
-            units_map[math.ceil(pos.y)][math.ceil(pos.x)] = [
+            map_state[math.ceil(pos.y)][math.ceil(pos.x)] = [
                 np.uint8(max(0, min(255, int(fraction * i)))) for i in c
             ]
-        return units_map
+
+        return map_state
 
     async def on_building_construction_started(self, unit: Unit):
         if unit.type_id in [
@@ -828,32 +778,16 @@ class ArtanisBot(BotAI):
             self.rewardMgr.apply_scout_destroy(unit_tag)
 
 
-# # Configura los detalles de conexión a OBS
-# host = "192.168.1.54"  # te boi ajiackear >.<
-# port = 4455
-# password = "8Ytf9TfVlFULRblI"
-
-
-# client = obswebsocket.obsws(host, port, password)
-# client.connect()
-# client.call(requests.StartRecord())
-
-
 ARTANIS = ArtanisBot(0)
-result = run_game(  # run_game is a function that runs the game.
-    maps.get("Scorpion_1.01"),  # the map we are playing on
+result = run_game(
+    maps.get("Scorpion_1.01"),
     [
-        Bot(
-            Race.Protoss, ARTANIS
-        ),  # runs our coded bot, protoss race, and we pass our bot object
+        Bot(Race.Protoss, ARTANIS),
         Computer(Race.Zerg, Difficulty.Hard),
-    ],  # runs a pre-made computer agent, zerg race, with a hard difficulty.
-    realtime=False,  # When set to True, the agent is limited in how long each step can take to process.
+    ],
+    realtime=False,
     disable_fog=False,
 )
-
-# client.call(requests.StopRecord())
-# client.disconnect()
 
 if str(result) == "Result.Victory":
     game_result = game_info.GameResult.VICTORY
@@ -861,23 +795,16 @@ if str(result) == "Result.Victory":
 else:
     game_result = game_info.GameResult.DEFEAT
 
-    # folder = "C:\\Users\\User\\Desktop\\UPM\\Master\\RLGAN\\SC2-RL\\output\\replays"
-    # for filename in os.listdir(folder):
-    #     file_path = os.path.join(folder, filename)
-    #     os.remove(file_path)
-
 os.makedirs("output", exist_ok=True)
 with open("output/results.txt", "a") as f:
     f.write(f"{result}\n")
 
 
-structures_map_state = np.zeros((224, 224, 3), dtype=np.uint8)
-units_map_state = np.zeros((224, 224, 3), dtype=np.uint8)
+map_state = np.zeros((224, 224, 3), dtype=np.uint8)
 
 state_rwd_action = {
     "state": {
-        "structures_state": structures_map_state.tolist(),
-        "units_state": units_map_state.tolist(),
+        "map_state": map_state.tolist(),
         "minerals": 0,
         "vespene": 0,
         "supply_used": 0,

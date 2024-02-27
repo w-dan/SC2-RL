@@ -37,19 +37,12 @@ class Sc2Env(py_environment.PyEnvironment):
             name="action",
         )
         self._observation_spec = {
-            "structures_state": array_spec.BoundedArraySpec(
+            "map_state": array_spec.BoundedArraySpec(
                 shape=(224, 224, 3),
                 dtype=np.float32,
                 minimum=0,
                 maximum=255,
-                name="structures_state",
-            ),
-            "units_state": array_spec.BoundedArraySpec(
-                shape=(224, 224, 3),
-                dtype=np.float32,
-                minimum=0,
-                maximum=255,
-                name="units_state",
+                name="map_state",
             ),
             "minerals": array_spec.BoundedArraySpec(
                 shape=(1,), dtype=np.float32, minimum=0, maximum=np.inf, name="minerals"
@@ -73,8 +66,7 @@ class Sc2Env(py_environment.PyEnvironment):
             ),
         }
         self._state = {
-            "structures_state": np.zeros((224, 224, 3), dtype=np.uint8),
-            "units_state": np.zeros((224, 224, 3), dtype=np.uint8),
+            "map_state": np.zeros((224, 224, 3), dtype=np.uint8),
             "minerals": 0,
             "vespene": 0,
             "supply_used": 0,
@@ -101,8 +93,7 @@ class Sc2Env(py_environment.PyEnvironment):
 
         self.acmrwd = 0.0
         self._state = {
-            "structures_state": np.zeros((224, 224, 3), dtype=np.uint8),
-            "units_state": np.zeros((224, 224, 3), dtype=np.uint8),
+            "map_state": np.zeros((224, 224, 3), dtype=np.uint8),
             "minerals": 0,
             "vespene": 0,
             "supply_used": 0,
@@ -172,26 +163,13 @@ class Sc2Env(py_environment.PyEnvironment):
 
         if self.verbose >= 2:
             cv2.imshow(
-                "structures map",
+                "map_state",
                 cv2.flip(
                     cv2.resize(
                         np.array(
-                            self._state["structures_state"],
+                            self._state["map_state"],
                             dtype=np.uint8,
                         ),
-                        None,
-                        fx=4,
-                        fy=4,
-                        interpolation=cv2.INTER_NEAREST,
-                    ),
-                    0,
-                ),
-            )
-            cv2.imshow(
-                "units map",
-                cv2.flip(
-                    cv2.resize(
-                        np.array(self._state["units_state"], dtype=np.uint8),
                         None,
                         fx=4,
                         fy=4,
@@ -204,15 +182,11 @@ class Sc2Env(py_environment.PyEnvironment):
 
         if self.verbose >= 3:
             cv2.imwrite(
-                f"{self.game_output}/structures-{self.game_tick}.png",
+                f"{self.game_output}/map_state-{self.game_tick}.png",
                 np.array(
-                    self._state["structures_state"],
+                    self._state["map_state"],
                     dtype=np.uint8,
                 ),
-            )
-            cv2.imwrite(
-                f"{self.game_output}/units-{self.game_tick}.png",
-                np.array(self._state["units_state"], dtype=np.uint8),
             )
 
         if self.verbose >= 1:
@@ -233,7 +207,7 @@ class Sc2Env(py_environment.PyEnvironment):
     def _calculate_macro_reward(self, info) -> float:
         reward = 0
 
-        reward -= 0.0001  # Add more 0?
+        reward -= 0.0001
 
         if not hasattr(self, "prev_nexus"):
             self.prev_nexus = info["n_nexus"]
@@ -265,17 +239,14 @@ class Sc2Env(py_environment.PyEnvironment):
 def preprocess_observation(observation):
     processed_observation = {}
     for key, value in observation.items():
-        if key in ["structures_state", "units_state"]:  # Imágenes
-            # Redimensionar las imágenes al tamaño esperado y normalizar
+        if key in ["map_state"]:
             resized_image = tf.image.resize(value, [224, 224])
             normalized_image = resized_image / 255.0
             processed_observation[key] = normalized_image
-        else:  # Valores escalares
-            # Convertir a tensor y expandir dimensiones si es necesario
+        else:
             scalar_tensor = tf.expand_dims(
                 tf.convert_to_tensor(value, dtype=tf.float32), -1
             )
-            # No expandir las dimensiones si ya has ajustado las specs para incluir la dimensión de lote
             processed_observation[key] = scalar_tensor
     return processed_observation
 

@@ -31,8 +31,8 @@ def compute_avg_return(env, agent_policy, num_episodes=10):
 
 
 def main(output):
-    N = 1000
-    num_episodes_per_iteration = 10
+    N = 50
+    num_episodes_per_iteration = 5
     num_iterations = N // num_episodes_per_iteration
 
     train_env = tf_py_environment.TFPyEnvironment(
@@ -40,24 +40,12 @@ def main(output):
             MAP_NAME, os.path.abspath(os.path.join(output, "train")), verbose=verbose
         )
     )
-    # eval_env = tf_py_environment.TFPyEnvironment(
-    #     create_environment(MAP_NAME, os.path.abspath("env"), verbose=0)
-    # )
 
     q_net = q_network.QNetwork(
         train_env.observation_spec(),
         train_env.action_spec(),
         preprocessing_layers={
-            "structures_state": tf.keras.models.Sequential(
-                [
-                    tf.keras.layers.Conv2D(
-                        16, (3, 3), activation="relu", input_shape=(224, 224, 3)
-                    ),
-                    tf.keras.layers.Conv2D(32, (3, 3), activation="relu"),
-                    tf.keras.layers.Flatten(),
-                ]
-            ),
-            "units_state": tf.keras.models.Sequential(
+            "map_state": tf.keras.models.Sequential(
                 [
                     tf.keras.layers.Conv2D(
                         16, (3, 3), activation="relu", input_shape=(224, 224, 3)
@@ -91,7 +79,7 @@ def main(output):
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
         data_spec=agent.collect_data_spec,
         batch_size=train_env.batch_size,
-        max_length=100,
+        max_length=50,
     )
     collect_driver = dynamic_episode_driver.DynamicEpisodeDriver(
         train_env,
@@ -125,12 +113,6 @@ def main(output):
                 f"Iteration: {iteration}, Loss: {total_loss / num_episodes_per_iteration}"
             )
 
-            # if iteration % 10 == 0:
-            #     avg_return = compute_avg_return(
-            #         eval_env, agent.policy, 10
-            #     )  # Evaluar con 10 episodios
-            #     print(f"Iteration: {iteration}, Average Return: {avg_return}")
-
             train_checkpointer.save(global_step)
             tf_policy_saver.save(policy_dir)
 
@@ -156,9 +138,3 @@ def main(output):
 
 if __name__ == "__main__":
     main("output/")
-    # saved_policy = tf.compat.v2.saved_model.load("output/policy/")
-
-    # env = create_environment(MAP_NAME, verbose=verbose)
-    # eval_env = tf_py_environment.TFPyEnvironment(env)
-
-    # print(compute_avg_return(eval_env, saved_policy, 2))
