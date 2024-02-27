@@ -3,15 +3,13 @@ import os
 import tensorflow as tf
 import tqdm
 from tf_agents.agents.dqn import dqn_agent
-from tf_agents.drivers import dynamic_episode_driver, dynamic_step_driver
-from tf_agents.environments import suite_gym, tf_py_environment
+from tf_agents.drivers import dynamic_episode_driver
+from tf_agents.environments import tf_py_environment
 from tf_agents.networks import q_network
-from tf_agents.policies import TFPolicy, policy_saver
+from tf_agents.policies import policy_saver
 from tf_agents.replay_buffers import tf_uniform_replay_buffer
-from tf_agents.trajectories import time_step as ts
 from tf_agents.utils import common
 
-from sc2_rl.rl.dqn import RandomPolicy
 from sc2_rl.rl.sc2env import create_environment
 
 MAP_NAME = "Scorpion_1.01"
@@ -38,7 +36,9 @@ def main(output):
     num_iterations = N // num_episodes_per_iteration
 
     train_env = tf_py_environment.TFPyEnvironment(
-        create_environment(MAP_NAME, os.path.abspath("train"), verbose=verbose)
+        create_environment(
+            MAP_NAME, os.path.abspath(os.path.join(output, "train")), verbose=verbose
+        )
     )
     # eval_env = tf_py_environment.TFPyEnvironment(
     #     create_environment(MAP_NAME, os.path.abspath("env"), verbose=0)
@@ -91,7 +91,7 @@ def main(output):
     replay_buffer = tf_uniform_replay_buffer.TFUniformReplayBuffer(
         data_spec=agent.collect_data_spec,
         batch_size=train_env.batch_size,
-        max_length=10,
+        max_length=100,
     )
     collect_driver = dynamic_episode_driver.DynamicEpisodeDriver(
         train_env,
@@ -102,7 +102,7 @@ def main(output):
 
     dataset = replay_buffer.as_dataset(
         num_parallel_calls=tf.data.experimental.AUTOTUNE,
-        sample_batch_size=8,
+        sample_batch_size=64,
         num_steps=2,
         single_deterministic_pass=False,
     ).prefetch(tf.data.experimental.AUTOTUNE)

@@ -4,10 +4,11 @@ class ColorPalette:
         PYLON = [255, 230, 175]
         ASSIMILATOR = [110, 125, 75]
         GATEWAY = [255, 255, 200]
-        CYBERNETICS_CORE = [230, 255, 175]
+        CYBERNETICSCORE = [230, 255, 175]
         STARGATE = [200, 255, 175]
         GENERIC = [140, 230, 10]
         ENEMY_STRUCTURE = [0, 100, 255]
+        ENEMY_NEXUS = [0, 0, 255]
 
     class RESOURCE:
         MINERAL = [175, 255, 255]

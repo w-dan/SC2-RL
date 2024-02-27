@@ -1,15 +1,15 @@
 import json
 import os
 import platform
+import shutil
 import subprocess
 import time
-from enum import Enum
 
 import cv2
 import numpy as np
 import redis
 import tensorflow as tf
-from tf_agents.environments import py_environment, tf_py_environment
+from tf_agents.environments import py_environment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 
@@ -94,7 +94,9 @@ class Sc2Env(py_environment.PyEnvironment):
 
     def _reset(self):
         print("RESETTING ENVIRONMENT!!!!!!!!!!!!!")
-        self.game_output = os.path.join(self.replays_path, f"Artanis-{time.time()}")
+        self.game_output = os.path.join(
+            self.replays_path, f"Artanis-{time.strftime('%Y%m%d-%H%M%S')}"
+        )
         os.makedirs(self.game_output, exist_ok=True)
 
         self.acmrwd = 0.0
@@ -127,6 +129,8 @@ class Sc2Env(py_environment.PyEnvironment):
                     "sc2_rl/sc2/artanis_bot.py",
                 ],
             )
+
+        time.sleep(5)
 
         return ts.restart(self._state)
 
@@ -253,6 +257,7 @@ class Sc2Env(py_environment.PyEnvironment):
             reward += rwd.GAME_REWARD.WIN
         elif self.game_status == game_info.GameResult.DEFEAT:
             reward += rwd.GAME_REWARD.LOSE
+            shutil.rmtree(self.game_output)
 
         return reward
 

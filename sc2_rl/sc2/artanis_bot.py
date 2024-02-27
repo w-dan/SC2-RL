@@ -1,17 +1,14 @@
 import json
 import math
 import os
-import shutil
 import sys
 import time
-from typing import Dict, List, Tuple, Union
+from typing import List, Union
 
 import cv2
 import numpy as np
-import obswebsocket
 import redis
 import redis.asyncio as aioredis
-from obswebsocket import obsws, requests
 from sc2 import maps  # maps method for loading maps to play in.
 from sc2.bot_ai import BotAI  # parent class we inherit from
 from sc2.data import Difficulty, Race
@@ -30,10 +27,6 @@ import sc2_rl.types.game as game_info
 import sc2_rl.types.rewards as rewards
 from sc2_rl.types.actions import Action
 from sc2_rl.types.colors import ColorPalette
-
-
-class SupplyException(Exception):
-    pass
 
 
 # Ref: https://github.com/Sentdex/SC2RL
@@ -103,8 +96,7 @@ class ArtanisBot(BotAI):
                         )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.BUILD_ASSIMILATOR:
             await self.chat_send("Building Assimilator", team_only=True)
@@ -125,7 +117,14 @@ class ArtanisBot(BotAI):
         elif action == Action.EXPAND:
             await self.chat_send("Expanding", team_only=True)
             try:
-                if await self.build_nexus(iteration):
+
+                if await self.build_nexus(
+                    reconstruct_main=(
+                        not self.structures(UnitTypeId.NEXUS)
+                        .closer_than(2.0, self.start_location)
+                        .exists
+                    )
+                ):
                     self.build_queue.append(
                         rewards.MicroReward(
                             iteration, Action.EXPAND, rewards.BUILD_REWARD.NEXUS
@@ -140,8 +139,7 @@ class ArtanisBot(BotAI):
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.BUILD_GATEWAY:
             await self.chat_send("Building Gateway", team_only=True)
@@ -191,8 +189,7 @@ class ArtanisBot(BotAI):
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.BUILD_CYBERNETICSCORE:
             await self.chat_send("Building Cyberneticscore", team_only=True)
@@ -242,8 +239,7 @@ class ArtanisBot(BotAI):
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.BUILD_STARGATE:
             await self.chat_send("Building Stargate", team_only=True)
@@ -293,8 +289,7 @@ class ArtanisBot(BotAI):
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.TRAIN_VOIDRAY:
             await self.chat_send("Training Voidray", team_only=True)
@@ -323,8 +318,7 @@ class ArtanisBot(BotAI):
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.SCOUT:
             await self.chat_send("Scouting", team_only=True)
@@ -336,7 +330,7 @@ class ArtanisBot(BotAI):
                 try:
                     self.scout(iteration)
                 except Exception as e:
-                    pass
+                    print(e)
 
             else:
                 self.rewardMgr.apply_unsuccessfull_action(
@@ -360,8 +354,7 @@ class ArtanisBot(BotAI):
                     )
 
             except Exception as e:
-                if self.verbose:
-                    print(e)
+                print(e)
 
         elif action == Action.FLEE:
             await self.chat_send("Fleeing", team_only=True)
@@ -437,10 +430,16 @@ class ArtanisBot(BotAI):
         return False
 
     async def build_nexus(self, reconstruct_main=False):
-        if self.already_pending(UnitTypeId.NEXUS) == 0 and self.can_afford(
-            UnitTypeId.NEXUS
+        if reconstruct_main:
+            location = self.start_location
+        else:
+            location = await self.get_next_expansion()
+
+        if (
+            location is not None
+            and self.already_pending(UnitTypeId.NEXUS) == 0
+            and self.can_afford(UnitTypeId.NEXUS)
         ):
-            location = self.start_location if reconstruct_main else None
             await self.expand_now(location=location)
             return True
 
@@ -458,7 +457,7 @@ class ArtanisBot(BotAI):
 
         return False
 
-    async def build_cybernetics(self, game_tick, nexus: Unit):
+    async def build_cybernetics(self, nexus: Unit):
         # if we can afford it:
         if (
             self.can_afford(UnitTypeId.CYBERNETICSCORE)
@@ -470,7 +469,7 @@ class ArtanisBot(BotAI):
 
         return False
 
-    async def build_stargate(self, game_tick, nexus: Unit):
+    async def build_stargate(self, nexus: Unit):
         # if we can afford it:
         if (
             self.can_afford(UnitTypeId.STARGATE)
@@ -580,19 +579,30 @@ class ArtanisBot(BotAI):
         return reward
 
     def _get_structures_map(self):
-        structures_map = np.zeros(
-            (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
+        # structures_map = np.zeros(
+        #     (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
+        # )
+
+        # for y in range(self.game_info.placement_grid.height - 1):
+        #     for x in range(self.game_info.placement_grid.width - 1):
+        #         if self.game_info.placement_grid.data_numpy[y, x]:
+        #             structures_map[y, x] = ColorPalette.GROUND.FREE
+        #         else:
+        #             structures_map[y, x] = ColorPalette.GROUND.OCCUPIED
+        structures_map = np.tile(
+            ColorPalette.GROUND.OCCUPIED,
+            (
+                self.game_info.placement_grid.height,
+                self.game_info.placement_grid.width,
+                1,
+            ),
         )
 
-        # draw available tiles
-        # for y in range(self.game_info.placement_grid.data_numpy.shape[1]):
-        #     for x in range(self.game_info.placement_grid.data_numpy.shape[0]):
-        # for x in range(self.game_info.placement_grid.height):
-        #     for y in range(self.game_info.placement_grid.width):
-        #         if self.game_info.placement_grid.is_set((x, y)):
-        #             structures_map[y][x] = ColorPalette.GROUND.FREE
-        #         else:
-        #             structures_map[y][x] = ColorPalette.GROUND.OCCUPIED
+        # Usar data_numpy para determinar las áreas libres y actualizar structures_map en consecuencia
+        free_areas = (
+            self.game_info.placement_grid.data_numpy != 0
+        )  # asumiendo que 0 indica áreas libres
+        structures_map[free_areas] = ColorPalette.GROUND.FREE
 
         # draw the minerals
         for mineral in self.mineral_field:
@@ -613,7 +623,7 @@ class ArtanisBot(BotAI):
         # draw the enemy start location:
         for enemy_start_location in self.enemy_start_locations:
             pos = enemy_start_location
-            c = ColorPalette.BUILD.GENERIC
+            c = ColorPalette.BUILD.ENEMY_NEXUS
             structures_map[math.ceil(pos.y)][math.ceil(pos.x)] = c
 
         # draw the enemy structures:
@@ -690,18 +700,31 @@ class ArtanisBot(BotAI):
         return structures_map
 
     def _get_units_map(self):
-        units_map = np.zeros(
-            (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
+        # units_map = np.zeros(
+        #     (self.game_info.map_size[0], self.game_info.map_size[1], 3), dtype=np.uint8
+        # )
+
+        # for y in range(self.game_info.pathing_grid.height - 1):
+        #     for x in range(self.game_info.pathing_grid.width - 1):
+        #         if self.game_info.pathing_grid.data_numpy[y, x]:
+        #             units_map[y, x] = ColorPalette.GROUND.FREE
+        #         else:
+        #             units_map[y, x] = ColorPalette.GROUND.OCCUPIED
+
+        units_map = np.tile(
+            ColorPalette.GROUND.OCCUPIED,
+            (
+                self.game_info.pathing_grid.height,
+                self.game_info.pathing_grid.width,
+                1,
+            ),
         )
 
-        # draw available tiles
-        # self.game_info.pathing_grid.print()
-        # for y in range(self.game_info.pathing_grid.height):
-        #     for x in range(self.game_info.placement_grid.width):
-        #         if self.game_info.placement_grid.is_set((x, y)):
-        #             units_map[y][x] = ColorPalette.GROUND.FREE
-        #         else:
-        #             units_map[y][x] = ColorPalette.GROUND.OCCUPIED
+        # Usar data_numpy para determinar las áreas libres y actualizar structures_map en consecuencia
+        free_areas = (
+            self.game_info.pathing_grid.data_numpy != 0
+        )  # asumiendo que 0 indica áreas libres
+        units_map[free_areas] = ColorPalette.GROUND.FREE
 
         # draw the enemy units:
         for enemy_unit in self.enemy_units:
