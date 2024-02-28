@@ -1,40 +1,77 @@
 import json
+import os
 import platform
+import shutil
 import subprocess
 import time
-from enum import Enum
 
 import cv2
 import numpy as np
 import redis
 import tensorflow as tf
-from tf_agents.environments import py_environment, tf_py_environment
+from tf_agents.environments import py_environment
 from tf_agents.specs import array_spec
 from tf_agents.trajectories import time_step as ts
 
 import sc2_rl.types.game as game_info
 import sc2_rl.types.rewards as rwd
+from sc2_rl.types.actions import Action
 
 
-# https://gymnasium.farama.org/api/env/
 class Sc2Env(py_environment.PyEnvironment):
-    def __init__(self, map_name: str, verbose: int = 3):
+    def __init__(self, map_name: str, output: str, verbose: int = 3):
         super(Sc2Env, self).__init__()
 
         self.redis_client = redis.Redis(host="localhost", port=6379, db=0)
         self.redis_client.flushall()
 
+        self.output = output
+        self.replays_path = os.path.join(output, "replays")
+        os.makedirs(self.replays_path, exist_ok=True)
+
         self._action_spec = array_spec.BoundedArraySpec(
-            shape=(), dtype=np.int32, minimum=0, maximum=7, name="action"
-        )
-        self._observation_spec = array_spec.BoundedArraySpec(
-            shape=(224, 224, 3),
-            dtype=np.float32,
+            shape=(),
+            dtype=np.int32,
             minimum=0,
-            maximum=255,
-            name="observation",
+            maximum=Action.number_of_actions() - 1,
+            name="action",
         )
-        self._state = np.zeros((224, 224, 3), dtype=np.uint8)
+        self._observation_spec = {
+            "map_state": array_spec.BoundedArraySpec(
+                shape=(224, 224, 3),
+                dtype=np.float32,
+                minimum=0,
+                maximum=255,
+                name="map_state",
+            ),
+            "minerals": array_spec.BoundedArraySpec(
+                shape=(1,), dtype=np.float32, minimum=0, maximum=np.inf, name="minerals"
+            ),
+            "vespene": array_spec.BoundedArraySpec(
+                shape=(1,), dtype=np.float32, minimum=0, maximum=np.inf, name="vespene"
+            ),
+            "supply_used": array_spec.BoundedArraySpec(
+                shape=(1,),
+                dtype=np.float32,
+                minimum=0,
+                maximum=200,
+                name="supply_used",
+            ),
+            "supply_cap": array_spec.BoundedArraySpec(
+                shape=(1,),
+                dtype=np.float32,
+                minimum=0,
+                maximum=200,
+                name="supply_cap",
+            ),
+        }
+        self._state = {
+            "map_state": np.zeros((224, 224, 3), dtype=np.uint8),
+            "minerals": 0,
+            "vespene": 0,
+            "supply_used": 0,
+            "supply_cap": 0,
+        }
         self._episode_ended = False
         self.verbose = verbose
         self.map_name = map_name
@@ -49,8 +86,19 @@ class Sc2Env(py_environment.PyEnvironment):
 
     def _reset(self):
         print("RESETTING ENVIRONMENT!!!!!!!!!!!!!")
+        self.game_output = os.path.join(
+            self.replays_path, f"Artanis-{time.strftime('%Y%m%d-%H%M%S')}"
+        )
+        os.makedirs(self.game_output, exist_ok=True)
+
         self.acmrwd = 0.0
-        self._state = np.zeros((224, 224, 3), dtype=np.uint8)
+        self._state = {
+            "map_state": np.zeros((224, 224, 3), dtype=np.uint8),
+            "minerals": 0,
+            "vespene": 0,
+            "supply_used": 0,
+            "supply_cap": 0,
+        }
         self._episode_ended = False
         self.game_status = game_info.GameResult.PLAYING
 
@@ -62,7 +110,7 @@ class Sc2Env(py_environment.PyEnvironment):
             self.game_process = subprocess.Popen(
                 [
                     ".venv/Scripts/python.exe",
-                    "sc2_rl/bots/artanis_bot.py",
+                    "sc2_rl/sc2/artanis_bot.py",
                 ],
             )
         elif platform.system() == "Linux":
@@ -72,6 +120,8 @@ class Sc2Env(py_environment.PyEnvironment):
                     "sc2_rl/sc2/artanis_bot.py",
                 ],
             )
+
+        time.sleep(5)
 
         return ts.restart(self._state)
 
@@ -95,7 +145,7 @@ class Sc2Env(py_environment.PyEnvironment):
 
         state_rwd_action = json.loads(state_rwd_action.decode())
 
-        self._state = np.array(state_rwd_action["state"], dtype=np.uint8)
+        self._state = state_rwd_action["state"]
         micro_reward = state_rwd_action["micro-reward"]
         game_tick = state_rwd_action["info"]["game_tick"]
         self.game_status = state_rwd_action["game_status"]
@@ -113,10 +163,17 @@ class Sc2Env(py_environment.PyEnvironment):
 
         if self.verbose >= 2:
             cv2.imshow(
-                "map",
+                "map_state",
                 cv2.flip(
                     cv2.resize(
-                        self._state, None, fx=4, fy=4, interpolation=cv2.INTER_NEAREST
+                        np.array(
+                            self._state["map_state"],
+                            dtype=np.uint8,
+                        ),
+                        None,
+                        fx=4,
+                        fy=4,
+                        interpolation=cv2.INTER_NEAREST,
                     ),
                     0,
                 ),
@@ -124,8 +181,13 @@ class Sc2Env(py_environment.PyEnvironment):
             cv2.waitKey(1)
 
         if self.verbose >= 3:
-            # save map image into "replays dir"
-            cv2.imwrite(f"replays/{int(time.time())}-{self.game_tick}.png", self._state)
+            cv2.imwrite(
+                f"{self.game_output}/map_state-{self.game_tick}.png",
+                np.array(
+                    self._state["map_state"],
+                    dtype=np.uint8,
+                ),
+            )
 
         if self.verbose >= 1:
             info = state_rwd_action["info"]
@@ -133,32 +195,60 @@ class Sc2Env(py_environment.PyEnvironment):
                 self.game_tick is not None and self.game_tick % 100 == 0
             ) or self._episode_ended:
                 print(
-                    f"Game Tick: {self.game_tick}. Total reward: {self.acmrwd:.4f}. Void Ray: {info['n_VOIDRAY']}"
+                    f"Game Tick: {self.game_tick}. Total reward: {self.acmrwd:.4f}. Void Ray: {info['n_voidray']}. Nexus: {info['n_nexus']}"
                 )
 
         return (
             ts.termination(self._state, reward)
             if self._episode_ended
-            else ts.transition(self._state, reward, discount=1.0)
+            else ts.transition(self._state, reward, discount=0.99)
         )
 
     def _calculate_macro_reward(self, info) -> float:
         reward = 0
 
+        reward -= 0.0001
+
+        if not hasattr(self, "prev_nexus"):
+            self.prev_nexus = info["n_nexus"]
+
+        if info["n_nexus"] < self.prev_nexus:
+            reward -= 10
+
+        if not hasattr(self, "prev_voidray"):
+            self.prev_voidray = info["n_voidray"]
+
+        if info["n_voidray"] < self.prev_voidray:
+            reward -= 0.5
+
+        if not hasattr(self, "prev_structures"):
+            self.prev_structures = info["n_structures"]
+
+        if info["n_structures"] < self.prev_structures:
+            reward -= 0.25
+
         if self.game_status == game_info.GameResult.VICTORY:
             reward += rwd.GAME_REWARD.WIN
         elif self.game_status == game_info.GameResult.DEFEAT:
             reward += rwd.GAME_REWARD.LOSE
+            shutil.rmtree(self.game_output)
 
         return reward
 
 
-def preprocess_observation(observation, target_shape=(224, 224)):
-    # Resize observation to the target shape
-    observation = tf.convert_to_tensor(observation)
-    observation = tf.cast(observation, tf.float32)
-    observation = tf.image.resize(observation, target_shape)
-    return observation
+def preprocess_observation(observation):
+    processed_observation = {}
+    for key, value in observation.items():
+        if key in ["map_state"]:
+            resized_image = tf.image.resize(value, [224, 224])
+            normalized_image = resized_image / 255.0
+            processed_observation[key] = normalized_image
+        else:
+            scalar_tensor = tf.expand_dims(
+                tf.convert_to_tensor(value, dtype=tf.float32), -1
+            )
+            processed_observation[key] = scalar_tensor
+    return processed_observation
 
 
 class PreprocessEnvironmentWrapper(py_environment.PyEnvironment):
@@ -205,5 +295,6 @@ class PreprocessEnvironmentWrapper(py_environment.PyEnvironment):
         return self._env.set_state(state)
 
 
-def create_environment(map_name: str, verbose: int):
-    return PreprocessEnvironmentWrapper(Sc2Env(map_name, verbose))
+def create_environment(map_name: str, output: str, verbose: int):
+    os.makedirs(output, exist_ok=True)
+    return PreprocessEnvironmentWrapper(Sc2Env(map_name, output, verbose))
