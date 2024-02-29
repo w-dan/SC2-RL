@@ -1,4 +1,4 @@
-from enum import IntEnum
+from enum import IntEnum, auto
 
 
 class Action(IntEnum):
@@ -16,14 +16,18 @@ class Action(IntEnum):
         - FLEE (7): Voidray flee (back to base).
     """
 
-    NO_ACTION = 0
-    BUILD_PYLON = 1
-    EXPAND = 2
-    BUILD_STARGATE = 3
-    TRAIN_VOIDRAY = 4
-    SCOUT = 5
-    ATTACK = 6
-    FLEE = 7
+    NO_ACTION = auto()
+    BUILD_PYLON = auto()
+    TRAIN_PROBE = auto()
+    BUILD_ASSIMILATOR = auto()
+    EXPAND = auto()
+    BUILD_GATEWAY = auto()
+    BUILD_CYBERNETICSCORE = auto()
+    BUILD_STARGATE = auto()
+    TRAIN_VOIDRAY = auto()
+    SCOUT = auto()
+    ATTACK = auto()
+    FLEE = auto()
 
     @classmethod
     def _missing_(cls, value):
